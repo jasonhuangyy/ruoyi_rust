@@ -1,0 +1,20 @@
+# config/default.toml
+[server]
+#host = "127.0.0.1"
+host = "0.0.0.0"
+port = 8080
+
+
+[database]
+# 请确保将 user:password@host:port/database 替换为您自己的配置
+url = "mysql://root:admin123@127.0.0.1:3306/ry-vue?connect_timeout=8"
+
+
+[jwt]
+# 警告：这是一个示例密钥，请在生产环境中务必更换为一个长且随机的字符串！
+# 您可以使用 openssl rand -base64 32 来生成一个。
+secret = "your-super-secret-key-that-is-at-least-32-bytes-long"
+# 签发者，可以是你的应用名或域名
+issuer = "ruoyi-rust-app"
+# JWT 过期时间，单位：小时
+expiration_hours = 2

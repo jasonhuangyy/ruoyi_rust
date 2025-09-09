@@ -1,0 +1,25 @@
+[package]
+name = "system"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde= { workspace = true }
+sqlx={workspace = true}
+serde_json = { workspace = true }
+axum = { workspace = true }
+argon2 = {workspace = true}
+jwt-simple = {workspace = true}
+common = { path = "../../common" }
+framework = { path = "../../framework" }
+monitor = { path = "../monitor" }
+ruoyi-macros = {path = "../../ruoyi-macros"}
+
+captcha = "1.0.0"
+uuid = { version = "1.8", features = ["v4"] }
+chrono = {workspace = true}
+moka = {workspace = true}
+tracing={workspace = true}
+tokio = {workspace = true}
+
+rust_xlsxwriter = {workspace = true}

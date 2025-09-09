@@ -1,0 +1,256 @@
+#基础与宽度设置 (Width & Basic)
+# 设置每行的最大宽度。这是一个软限制，意味着在极少数情况下（如一个超长的字符串字面量或无法分割的类型名），格式化后的代码可能会超过这个宽度。
+max_width = 300
+# 控制是使用制表符（Tab）还是空格进行缩进。false 表示使用空格，true 表示使用制表符。
+hard_tabs = false
+# 当 hard_tabs = false 时，一个缩进级别等于多少个空格。
+tab_spaces = 4
+# 控制换行符的风格。"Auto": 自动检测（在 Windows 上用 CRLF \r\n，在 Linux/macOS 上用 LF \n）。"Windows": 强制使用 CRLF \r\n。"Unix": 强制使用 LF \n。"Native": 使用运行 rustfmt 的操作系统对应的换行符。
+newline_style = "Auto"
+# 控制缩进风格。
+# "Block": 对齐到块的起始位置，这是大多数语言的默认风格。
+# fn foo() {
+# let x = 1;
+# }
+# "Visual": 视觉上对齐到上一行的相关符号。
+# fn foo(a: u32,
+# b: u32) {}
+indent_style = "Block"
+# 控制是否为小程序代码启用更紧凑的格式化启发式规则。
+#  "Default": 默认行为，通常等同于 "Off"。
+#  "Off": 不使用小启发式规则，总是倾向于垂直格式化。
+#  "Max": 使用最大程度的紧凑格式化，将小数组、结构体等尽可能放在一行。
+use_small_heuristics = "Default"
+# 宽度启发式规则 (Width Heuristics)（已废弃，被 use_small_heuristics 取代）尝试将函数调用参数放在一行的宽度预算。
+fn_call_width = 60
+#（已废弃，被 use_small_heuristics 取代）尝试将属性宏（如 #[derive(...)]）放在一行的宽度预算。
+attr_fn_like_width = 70
+#（已废弃，被 use_small_heuristics 取代）尝试将结构体字面量放在一行的宽度预算。
+struct_lit_width = 18
+#（已废弃，被 use_small_heuristics 取代）尝试将枚举的结构体变体放在一行的宽度预算。
+struct_variant_width = 35
+#（已废弃，被 use_small_heuristics 取代）尝试将数组放在一行的宽度预算。
+array_width = 60
+#（已废弃，被 use_small_heuristics 取代）尝试将方法调用链放在一行的宽度预算。
+chain_width = 60
+# 如果一个 if-else 表达式可以被格式化为单行，此选项限制其最大长度。如果超过这个长度，即使 max_width 允许，也会被格式化为多行。
+single_line_if_else_max_width = 50
+# 类似于 single_line_if_else_max_width，但针对 let-else 语句。限制单行 let-else 的最大宽度。
+single_line_let_else_max_width = 50
+# 注释与文档 (Comments & Docs)是否自动换行注释。如果为 true，rustfmt 会尝试在 comment_width 处断开长注释。
+wrap_comments = false
+# 是否格式化文档注释（/// 和 //!）中的 Rust 代码块。
+format_code_in_doc_comments = false
+# 当 format_code_in_doc_comments 为 true 时，文档注释中代码块的最大行宽。
+doc_comment_code_block_width = 100
+# 当 wrap_comments 为 true 时，普通注释（// 和 /* */）的最大行宽。
+comment_width = 80
+# 是否规范化注释。true 会将 // 和 //! 转为 // 和 //!（注意空格），并将 /* 转为 /** 或 /*!（如果适用）。
+normalize_comments = false
+# 是否规范化文档属性。true 会将 #[doc="..."] 转换为 /// ...。
+normalize_doc_attributes = false
+# 宏与字面量 (Macros & Literals)是否格式化包含在字符串字面量中的代码片段（通常由 format!, panic! 等宏使用）。这是一个实验性功能。
+format_strings = false
+# 是否格式化宏定义中的匹配器（matcher）部分。
+format_macro_matchers = false
+# 是否格式化宏的调用体（{} 或 () 中的内容）。
+format_macro_bodies = true
+# 一个字符串列表，包含不希望被 rustfmt 格式化的宏调用的名称。
+# 例如 ["foo!", "bar!"] 会跳过 foo!(...) 和 bar!(...) 的格式化。
+skip_macro_invocations = []
+# 控制十六进制字面量的大小写。"Preserve": 保持原样。"Upper": 强制转为大写 (e.g., 0xFF)。"Lower": 强制转为小写 (e.g., 0xff)。
+hex_literal_case = "Preserve"
+# 控制浮点数字面量是否保留尾随的零。"Preserve": 保持原样 (e.g., 1.0 仍为 1.0)。"Strip": 去掉尾随的零 (e.g., 1.0 变为 1)。
+float_literal_trailing_zero = "Preserve"
+# 单行与多行格式 (Single/Multi-line Formatting)是否将空的条目（如 fn foo() {}）强制放在单行。
+empty_item_single_line = true
+# 是否将短的结构体字面量强制放在单行。
+struct_lit_single_line = true
+# 是否将短的函数体强制放在单行。false 意味着即使函数体很短，也会使用大括号换行。
+fn_single_line = false
+# 是否将短的 where 子句强制放在单行。
+where_single_line = false
+# use 语句 (Imports)
+# use 语句的缩进风格。
+# "Block": use a::{b, c};
+# "Visual": `use a::{b,
+# c};`
+imports_indent = "Block"
+# use 语句的布局。
+# "Mixed": use std::{fmt, io}; (从 std 导入的放在一起)。
+# "Vertical": use std::fmt; use std::io; (每个导入一个 use 语句)。
+# "Horizontal": use std::fmt, std::io; (已废弃)。
+imports_layout = "Mixed"
+# use 语句的粒度。
+#  "Preserve": 保持 use 语句的原始分组。
+#  "Crate": 将来自同一个 crate 的所有导入合并到一个 use 语句中。
+#  "Module": 将来自同一个模块的导入合并。
+#  "Item": 每个导入项一个 use 语句。
+#  "One": 将所有导入合并到一个 use 语句中（如果可能）。
+imports_granularity = "Preserve"
+# 控制是否对 use 语句中的项进行分组。
+# "Preserve": 保持原样。
+# "StdExternalCrate": 按 std, 外部crate, self/super/crate 的顺序分组。
+group_imports = "Preserve"
+# 重排顺序 (Reordering)
+# 是否对 use 语句的路径进行字母排序。
+reorder_imports = true
+# 是否对 mod 声明进行字母排序。
+reorder_modules = true
+# 是否对 impl 块中的项（方法、常量等）进行重排。
+# false 是强烈推荐的，因为重排可能会破坏逻辑上的分组。
+reorder_impl_items = false
+# 空格与标点 (Spacing & Punctuation)
+# 类型中冒号和泛型 < > 等标点的密度。
+# "Wide": fn foo(x: T) -> T (冒号后有空格)。
+# "Compressed": fn foo(x:T) -> T (冒- 冒号后无空格)。
+type_punctuation_density = "Wide"
+# 是否在变量和类型之间的冒号前加空格。
+# false: let x: i32
+#  true: let x : i32
+space_before_colon = false
+# 是否在冒号后加空格。
+#  true: let x: i32
+# false: let x:i32
+space_after_colon = true
+# 是否在范围操作符 .. 和 ..= 两侧加空格。
+# false: for i in 0..10
+# true: for i in 0 .. 10
+spaces_around_ranges = false
+# 二元操作符（+, * 等）在换行时的位置。
+# "Front": 放在新行的行首。
+# `let x = a +
+# b;`
+# "Back": 放在上一行的行尾。
+# `let x = a +
+# b;`
+binop_separator = "Front"
+# 是否移除不必要的嵌套括号。
+# true: (x) 变为 x。
+remove_nested_parens = true
+# 是否合并控制表达式。
+# true: if x { if y { ... } } 可能会被合并。
+combine_control_expr = true
+# 对齐与高级布局 (Alignment & Advanced Layout)
+# 如果数组的每个元素都短于此阈值，则 rustfmt 倾向于将数组格式化为单行。
+short_array_element_width_threshold = 10
+# 如果为 true，当表达式（如函数调用）的参数列表溢出时，
+# 会在开头和结尾的定界符（( 和 )）后立即换行。
+overflow_delimited_expr = false
+# 对齐结构体字段的阈值。如果一个结构体中，字段声明的数量超过此阈值，
+# rustfmt 会尝试对齐字段名、冒号和类型。0 表示禁用对齐。
+struct_field_align_threshold = 0
+# 类似于 struct_field_align_threshold，但用于对齐枚举成员的判别式（discriminants）。
+# 0 表示禁用对齐。
+enum_discrim_align_threshold = 0
+# match 表达式的分支（arm）是否总是使用代码块 {...}。
+# true: _ => { println!("hi"); }
+# false: _ => println!("hi"),
+match_arm_blocks = true
+# match 分支前导 | 的风格。
+# "Never": pat1 | pat2 => ...
+# "Always": | pat1 | pat2 => ...
+# "IfMultiline": 仅在多行模式匹配时使用 |。
+match_arm_leading_pipes = "Never"
+# (已废弃) 是否缩进 match 分支。现在总是缩进。
+match_arm_indent = true
+# 是否强制将所有块（如函数体、if 体）格式化为多行，即使它们是空的。
+# true 会将 fn foo() {} 格式化为：
+# `fn foo() {
+# }`
+force_multiline_blocks = false
+# 控制函数参数的布局。
+# "Tall": 只要有参数就总是垂直排列。
+# "Compressed": 尽可能放在一行。
+# "Vertical": 默认行为，尝试单行，如果超宽则垂直排列。
+fn_params_layout = "Compressed"
+# 控制大括号 {} 的位置。
+# "SameLineWhere": 大括号与 fn 或 impl 在同一行，但 where 子句除外。
+# "NextLine": 大括号总是在新的一行。
+# "PreferSameLine": 尽可能在同一行。
+brace_style = "SameLineWhere"
+# 控制 if, for, while 等控制流语句的大括号风格。
+# "AlwaysSameLine": if condition {
+# "AlwaysNextLine": if condition \n {
+# "SameLineWhere": 同 brace_style。
+control_brace_style = "AlwaysSameLine"
+# 逗号与分号 (Commas & Semicolons)
+# 是否保留语句末尾可选的分号。true 表示总是加上分号。
+trailing_semicolon = true
+# 控制结尾逗号（trailing comma）的策略。
+# "Vertical": 仅在项目是垂直排列时（多行）才添加结尾逗号。
+# "Always": 总是添加结尾逗号（如果语法允许）。
+# "Never": 从不添加结尾逗号。
+trailing_comma = "Vertical"
+# 是否在 match 块的最后一个分支后添加结尾逗号。
+# 这在 Rust 2021 Edition 中成为惯用法。
+match_block_trailing_comma = false
+# 空行 (Blank Lines)
+# 连续空行的最大数量。超过此数量的空行会被压缩为这个值。
+blank_lines_upper_bound = 1
+# 在模块、函数等顶层项之间保留的最小空行数。
+blank_lines_lower_bound = 0
+# 元信息与版本 (Meta & Version)
+# 指定项目使用的 Rust Edition。这对解析语法至关重要。
+# "2015", "2018", "2021", "2024"。
+edition = "2015"
+# （新增）指定格式化风格应遵循的 Edition 惯例。
+# 例如 style_edition = "2024" 可能会采用 2024 年成为惯例的格式化风格，
+# 即使 edition = "2021"。
+style_edition = "2015"
+# rustfmt 配置文件格式的版本。
+# "One" 是旧版，"Two" 是当前推荐的版本，它引入了一些破坏性配置更改。
+version = "One"
+# 高级与实验性功能 (Advanced & Experimental)
+# （已废弃）控制内联属性的宽度。
+inline_attribute_width = 0
+# 是否格式化由 #[derive] 或 macro_rules! 自动生成的文件。
+# 通过检查文件头部是否有特定标记来判断。
+format_generated_files = true
+# 当 format_generated_files 开启时，在文件头部搜索生成标记的最大行数。
+generated_marker_line_search_limit = 5
+# 是否将多个 #[derive(...)] 属性合并为一个。
+# true: #[derive(Debug, Clone)]
+# false: #[derive(Debug)]\n#[derive(Clone)]
+merge_derives = true
+# 是否将 match expr { Ok(x) => x, Err(e) => return Err(e) } 简写为 expr?。
+use_try_shorthand = false
+# 是否使用字段初始化简写。
+# true: let s = S { x: x, y: y }; 会被格式化为 let s = S { x, y };
+use_field_init_shorthand = false
+# 是否总是为 extern 函数强制写明 ABI。
+# true: extern fn foo() 会被格式化为 extern "C" fn foo()
+force_explicit_abi = true
+# 是否将 _ 通配符后缀压缩。
+# true: let (a, _) = t; 变为 let (a, ..) = t; (如果适用)。
+condense_wildcard_suffixes = false
+# rustfmt 自身行为 (Operational)
+# 控制是否在输出中使用颜色。
+# "Auto", "Always", "Never"。
+color = "Auto"
+# 要求运行的 rustfmt 版本必须满足此版本要求。
+required_version = "1.8.0"
+
+# 是否启用不稳定的特性。这些特性可能在未来版本中更改或移除。
+unstable_features = false
+# 禁用所有格式化。用于临时关闭 rustfmt。
+disable_all_formatting = false
+# （用于内部测试）跳过对子模块的格式化。
+skip_children = false
+# 是否在格式化失败时显示解析错误。
+show_parse_errors = true
+# 如果有任何一行超过了 max_width，是否报错并以非零状态码退出。
+error_on_line_overflow = false
+# 如果文件格式化后有变动，或者文件未能成功格式化，是否报错并以非零状态码退出。
+# 这在 CI（持续集成）中非常有用，可以检查代码是否已格式化。
+error_on_unformatted = false
+# 一个文件/目录的 glob 模式列表，rustfmt 会忽略这些文件。
+ignore = []
+# 控制输出模式。
+# "Files": 直接覆盖修改源文件。
+# "Stdout": 将格式化结果输出到标准输出。
+# "Diff": 以 diff 格式显示更改。
+# "Check": 不输出，只报告哪些文件会被更改。
+emit_mode = "Files"
+# 在覆盖文件前，是否创建备份（*.bk 文件）。
+make_backup = false

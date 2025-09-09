@@ -1,0 +1,25 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+framework = { path = "../framework" }
+system = {path = "../modules/system"}
+monitor = { path = "../modules/monitor" }
+
+# 从 workspace 继承
+tokio = { workspace = true }
+axum = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+tower-http = { workspace = true }
+serde_json = {workspace = true}
+sqlx = {workspace = true}
+# 缓存
+moka = { workspace = true }
+
+# argon2 用于密码哈希验证
+argon2 = {workspace = true}
+tokio-cron-scheduler = {workspace = true}

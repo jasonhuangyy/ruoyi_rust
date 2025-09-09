@@ -1,0 +1,22 @@
+
+[package]
+name = "monitor"
+version = "0.1.0"
+edition = "2024" 
+
+[dependencies]
+serde = { workspace = true }
+sqlx = { workspace = true }
+serde_json = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tokio = {workspace = true}
+
+common = { path = "../../common" }
+framework = { path = "../../framework" }
+futures-util = "0.3.31"
+tower = "0.5.2"
+moka = { workspace = true }
+uuid = { workspace = true }
+tokio-cron-scheduler = {workspace = true}

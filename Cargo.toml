@@ -1,0 +1,52 @@
+[workspace]
+resolver = "2" # 使用最新的依赖解析器
+members = [
+    "app",
+    "common",
+    "framework",
+    "modules",
+    "modules/system",
+    "modules/monitor",
+    "ruoyi-macros",
+]
+
+[workspace.dependencies]
+tokio = { version = "1.37.0", features = ["rt", "rt-multi-thread", "macros"] }
+
+axum = { version = "0.7.5", features = [
+    "http2",
+    "query",
+    "tracing",
+    "multipart",
+     "macros",
+] }
+tower-http = { version = "0.5", features = ["fs","trace"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+serde = { version = "1.0.198", features = ["derive"] }
+serde_json = "1.0.140"
+
+config = { version = "0.14", features = ["toml"] }
+
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+moka = { version = "0.12", features = ["future"] }
+sqlx = { version = "0.7.4", features = [
+    "chrono",
+    "mysql",
+    "runtime-tokio",
+    "tls-rustls",
+] }
+
+
+argon2 = "0.5"
+jwt-simple = { version = "0.12.9",default-features = false, features = ["pure-rust"] }
+chrono = { version = "0.4.41",features = ["serde"] }
+tokio-cron-scheduler = "0.10.1"
+uuid = { version = "1.8.0", features = ["v4"] }
+
+zip = "0.6"
+base64 = "0.22.1"
+
+thiserror = "2.0.12"
+rust_xlsxwriter = "0.61.0"

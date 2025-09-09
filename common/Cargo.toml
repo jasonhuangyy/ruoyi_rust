@@ -1,0 +1,21 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# 新增以下内容
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+config = { workspace = true }
+sqlx = {workspace = true}
+chrono = { workspace = true}
+tracing = { workspace = true}
+zip = {workspace = true}
+
+strum = { version = "0.26", features = ["derive"] }
+strum_macros = "0.26"
+async-trait = "0.1.88"
+
+rust_xlsxwriter = { workspace = true }
