@@ -28,8 +28,6 @@ pub fn router() -> Router<Arc<AppState>> {
             "/system/user/authRole",
             put(handler::update_auth_role).layer(LogLayer::new("用户管理", BusinessType::Grant)),
         )
-        .route("/system/user/profile", get(handler::get_profile))
-        .route("/system/user/profile/updatePwd", put(handler::update_pwd))
         .route("/system/user/deptTree", get(dept::handler::treeselect))
         .route("/system/user/list", get(handler::list))
         .route("/system/user/", get(handler::get_add_user_init_data))
