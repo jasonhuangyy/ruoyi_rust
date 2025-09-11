@@ -91,7 +91,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
     // 1.1 验证码校验
     #[cfg(not(debug_assertions))]
     match state.captcha_cache.get(&_uuid).await {
-        Some(correct_code) if correct_code.to_lowercase() == code.to_lowercase() => {
+        Some(correct_code) if correct_code.to_lowercase() == _code.to_lowercase() => {
             state.captcha_cache.invalidate(&_uuid).await;
         }
         _ => {
