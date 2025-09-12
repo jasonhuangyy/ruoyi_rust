@@ -167,15 +167,17 @@ cd ruoyi-rust
         -   `monitor`: **系统监控模块**。
     -   `ruoyi-macros`: **过程宏库**。存放自定义的过程宏，如 `#[require_permission(...)]`。
 
-##🤝 贡献指南
+## 🤝 贡献指南
 
 我们热烈欢迎任何形式的贡献！无论是提交 Issue、修复 Bug 还是实现新功能。请参考我们的 [CONTRIBUTING.md](CONTRIBUTING.md) 文件了解详细的贡献流程和编码规范。
 
-##📄 许可证 (License)
+## 📄 许可证 (License)
 
 本项目采用 [MIT License](LICENSE) 开源许可证。
 
+## ruoyi-rust： 交流QQ群: 512670767
+
 ## 🙏 鸣谢
 
-*   感谢原项目 [RuoYi-Vue](https://gitee.com/y_project/RuoYi-Vue) 提供的优秀设计和前端实现。
+*   感谢原项目 [RuoYi](https://gitee.com/y_project/RuoYi) 提供的优秀设计和前端实现。
 *   感谢 [RuoYi-Vue3](https://gitcode.com/yangzongzhuan/RuoYi-Vue3) 提供的 Vue3 前端版本。
