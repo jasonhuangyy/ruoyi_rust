@@ -1,5 +1,20 @@
+use serde::{de, Deserialize, Deserializer, Serialize};
 use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+//处理JSON中的字符串 "0" 或数字 0，并将其统一转换为 i32
+fn deserialize_string_or_number_to_i32<'de, D>(deserializer: D) -> Result<i32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Value::deserialize(deserializer)? {
+        Value::String(s) => s.parse::<i32>().map_err(de::Error::custom),
+        Value::Number(num) => num.as_i64().map(|n| n as i32).ok_or_else(|| {
+            de::Error::custom(format!("无效的数字 {}", num))
+        }),
+        _ => Err(de::Error::custom("期望一个字符串或数字")),
+    }
+}
 
 /// 系统菜单实体，严格根据 CREATE TABLE 语句定义
 #[derive(sqlx::FromRow, Debug,Default, Serialize, Deserialize, Clone)]
@@ -47,7 +62,9 @@ pub struct AddMenuVo {
     pub order_num: Option<i32>,
     pub path: Option<String>,
     pub component: Option<String>,
+	#[serde(deserialize_with = "deserialize_string_or_number_to_i32")]
     pub is_frame: i32, // 前端传的是数字 0 或 1
+	#[serde(deserialize_with = "deserialize_string_or_number_to_i32")]
     pub is_cache: i32,
     pub menu_type: String,
     pub visible: String,
@@ -66,7 +83,9 @@ pub struct UpdateMenuVo {
     pub order_num: Option<i32>,
     pub path: Option<String>,
     pub component: Option<String>,
+	#[serde(deserialize_with = "deserialize_string_or_number_to_i32")]
     pub is_frame: i32,
+	#[serde(deserialize_with = "deserialize_string_or_number_to_i32")]
     pub is_cache: i32,
     pub menu_type: String,
     pub visible: String,
