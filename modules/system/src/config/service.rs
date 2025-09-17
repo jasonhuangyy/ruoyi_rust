@@ -4,9 +4,11 @@ use common::{
     page::TableDataInfo,
 };
 use framework::state::AppState;
+use rust_xlsxwriter::Workbook;
 use sqlx::{MySql, MySqlPool, QueryBuilder};
 use std::sync::Arc;
 use tracing::{error, info, instrument, };
+
 
 /// 分页查询参数配置列表
 #[instrument(skip(db))]
@@ -16,7 +18,7 @@ pub async fn select_config_list(
 ) -> Result<TableDataInfo<SysConfig>, AppError> {
     // 构建基础查询
     let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
-        "select config_id, config_name, config_key, config_value, config_type, create_by, create_time, remark from sys_config where 1=1",
+        "select config_id, config_name, config_key, config_value, config_type, create_by, create_time, update_by, update_time, remark from sys_config where 1=1",
     );
     let mut count_builder: QueryBuilder<MySql> = QueryBuilder::new("select count(*) from sys_config where 1=1");
 
@@ -208,4 +210,72 @@ pub async fn refresh_cache(state: &Arc<AppState>) -> Result<(), AppError> {
     state.config_cache.invalidate_all();
     info!("[CACHE_INVALIDATE] All config cache has been invalidated.");
     Ok(())
+}
+
+#[instrument(skip(db, params))]
+pub async fn export_config_list(
+    db: &MySqlPool,
+    params: ListConfigQuery,
+) -> Result<Vec<u8>, AppError> {
+    info!("[SERVICE] Starting config list export with params: {:?}", params);
+
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
+        "select config_id, config_name, config_key, config_value, config_type, create_by, create_time,update_by, update_time, remark from sys_config where 1=1",
+    );
+
+    if let Some(config_name) = params.config_name {
+        if !config_name.trim().is_empty() {
+            query_builder.push(" and config_name like ").push_bind(format!("%{}%", config_name));
+        }
+    }
+    if let Some(config_key) = params.config_key {
+        if !config_key.trim().is_empty() {
+            query_builder.push(" and config_key like ").push_bind(format!("%{}%", config_key));
+        }
+    }
+    if let Some(config_type) = params.config_type {
+        if !config_type.trim().is_empty() {
+            query_builder.push(" and config_type = ").push_bind(config_type);
+        }
+    }
+    if let Some(date_range) = params.date_range {
+        if let Some(begin_time) = date_range.begin_time {
+            if !begin_time.is_empty() {
+                query_builder.push(" and date_format(create_time,'%y%m%d') >= date_format(").push_bind(begin_time).push(",'%y%m%d')");
+            }
+        }
+        if let Some(end_time) = date_range.end_time {
+            if !end_time.is_empty() {
+                query_builder.push(" and date_format(create_time,'%y%m%d') <= date_format(").push_bind(end_time).push(",'%y%m%d')");
+            }
+        }
+    }
+    query_builder.push(" order by create_time desc");
+
+    let configs: Vec<SysConfig> = query_builder.build_query_as().fetch_all(db).await?;
+    info!("[DB_RESULT] Fetched {} configs for export.", configs.len());
+
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+
+    let headers = ["参数主键", "参数名称", "参数键名", "参数键值", "系统内置", "创建时间", "备注"];
+    for (col_num, header) in headers.iter().enumerate() {
+        worksheet.write(0, col_num as u16, *header)?;
+    }
+
+    for (row_num, config) in configs.iter().enumerate() {
+        let row = (row_num + 1) as u32;
+        worksheet.write(row, 0, config.config_id)?;
+        worksheet.write(row, 1, config.config_name.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 2, config.config_key.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 3, config.config_value.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 4, if config.config_type.as_deref() == Some("Y") { "是" } else { "否" })?;
+        worksheet.write(row, 5, config.create_time.map_or("".to_string(), |t| t.format("%Y-%m-%d %H:%M:%S").to_string()))?;
+        worksheet.write(row, 6, config.remark.as_deref().unwrap_or(""))?;
+    }
+
+    let buffer = workbook.save_to_buffer()?;
+    info!("[SERVICE] Excel buffer created successfully, size: {} bytes.", buffer.len());
+
+    Ok(buffer)
 }

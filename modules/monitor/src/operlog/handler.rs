@@ -3,7 +3,10 @@ use super::{
     service,
 };
 use axum::{
-    extract::{Query, State},
+    extract::{Form, Query, State},
+    http::{header, HeaderMap, StatusCode},
+    response::IntoResponse,
+    Extension,
     Json,
 };
 use common::{
@@ -11,9 +14,13 @@ use common::{
     page::TableDataInfo,
     response::AjaxResult,
 };
+use framework::jwt::ClaimsData;
 use framework::state::AppState;
+use ruoyi_macros::require_permission;
 use std::sync::Arc;
 use tracing::info;
+
+use common::auth;
 
 /// 获取操作日志列表 (分页)
 pub async fn list(
@@ -46,4 +53,30 @@ pub async fn clean(
     info!("[HANDLER] Entering operlog::clean");
     service::clean_oper_log(&state.db_pool).await?;
     Ok(Json(AjaxResult::<()>::success_msg("清空成功")))
+}
+
+#[require_permission("monitor:operlog:export")]
+pub async fn export(
+    State(state): State<Arc<AppState>>,
+    Extension(_claims): Extension<ClaimsData>,
+    Form(params): Form<ListOperLogQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    info!("[HANDLER] Entering operlog::export with params: {:?}", params);
+
+    let excel_data = service::export_oper_log_list(&state.db_pool, params).await?;
+
+    let filename = format!("operlog_{}.xlsx", chrono::Local::now().format("%Y%m%d%H%M%S"));
+
+    let mut headers = HeaderMap::new();
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".parse().unwrap()
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        disposition.parse().unwrap()
+    );
+
+    Ok((StatusCode::OK, headers, excel_data))
 }

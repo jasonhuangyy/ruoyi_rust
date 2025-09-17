@@ -3,7 +3,10 @@ use super::{
     service,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Form, Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
+    response::IntoResponse,
+    Extension,
     Json,
 };
 use common::{
@@ -11,7 +14,9 @@ use common::{
     page::TableDataInfo,
     response::AjaxResult,
 };
+use framework::jwt::ClaimsData;
 use framework::state::AppState;
+use ruoyi_macros::require_permission;
 use std::sync::Arc;
 use tracing::info;
 
@@ -59,4 +64,30 @@ pub async fn unlock(
     // 1. 调用 user::service 更新用户状态
     // 2. 如果有缓存，需要清理用户缓存
     Ok(Json(AjaxResult::<()>::success_msg("解锁功能待实现")))
+}
+
+#[require_permission("monitor:logininfor:export")]
+pub async fn export(
+    State(state): State<Arc<AppState>>,
+    Extension(_claims): Extension<ClaimsData>,
+    Form(params): Form<ListLogininforQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    info!("[HANDLER] Entering logininfor::export with params: {:?}", params);
+
+    let excel_data = service::export_logininfor_list(&state.db_pool, params).await?;
+
+    let filename = format!("logininfor_{}.xlsx", chrono::Local::now().format("%Y%m%d%H%M%S"));
+
+    let mut headers = HeaderMap::new();
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".parse().unwrap()
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        disposition.parse().unwrap()
+    );
+
+    Ok((StatusCode::OK, headers, excel_data))
 }

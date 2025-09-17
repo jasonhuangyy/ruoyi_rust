@@ -62,7 +62,13 @@ pub struct UserListVo {
     // 关联的部门信息
     pub dept: Option<SysDept>,
 }
-
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AddUserInitVo {
+    // 系统中所有可用的角色列表
+    pub roles: Vec<SysRole>,
+    pub posts: Vec<SysPost>,
+}
 /// 新增用户时接收前端数据的请求体  
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]

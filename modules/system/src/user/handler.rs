@@ -4,12 +4,14 @@ use super::{
 };
 use crate::post;
 use crate::role::service as role_service;
-use crate::user::model::{AuthRoleVo, UpdateAuthRoleVo, UpdateAvatarVo, UpdateProfileVo};
-use crate::user::model::{UpdatePwdVo, UserProfileVo};
+// 引入角色服务
+use crate::user::model::{AddUserInitVo, AuthRoleVo, UpdateAuthRoleVo, UpdateAvatarVo, UpdateProfileVo, UpdatePwdVo, UserProfileVo};
 use axum::extract::Multipart;
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::{
-    extract::{Path, Query, State},
-    Extension, Json,
+    extract::{Form, Path, Query, State},
+    response::IntoResponse, Extension,
+    Json,
 };
 use common::extractor::DebugJson;
 use common::{auth::Permission, error::AppError, page::TableDataInfo, response::AjaxResult};
@@ -53,7 +55,7 @@ pub async fn list(State(state): State<Arc<AppState>>, Extension(_claims): Extens
 
 /// RuoYi前端在点击"新增"按钮时，会发送一个不带ID的GET请求到 /system/user/
 /// 这个接口需要返回所有可用的角色列表，以便在表单中渲染。
-pub async fn get_add_user_init_data(State(state): State<Arc<AppState>>) -> Result<Json<UserDetailVo>, AppError> {
+pub async fn get_add_user_init_data(State(state): State<Arc<AppState>>) -> Result<Json<AjaxResult<AddUserInitVo>>, AppError> {
     info!("[HANDLER] Entering user::get_add_user_init_data (for add user modal)");
 
     // 1. 查询所有可用的角色列表
@@ -71,19 +73,16 @@ pub async fn get_add_user_init_data(State(state): State<Arc<AppState>>) -> Resul
 
     // 2. 组装成前端期望的 UserDetailVo 结构
     // `data` 字段为 null 或一个空的 SysUser 对象，`role_ids` 为空数组。
-    let vo = UserDetailVo {
-        data: None, // 表示这是新增，没有用户数据
+    let vo = AddUserInitVo {
         roles: all_roles,
-        role_ids: vec![], // 新增时，默认不选中任何角色
-        posts: all_posts,
-        post_ids: vec![],
+        posts: all_posts, // 如果实现了岗位管理，在这里填充
     };
 
-    Ok(Json(vo))
+    Ok(Json(AjaxResult::success(vo)))
 }
 
 /// 获取用户详细信息
-pub async fn get_detail(State(state): State<Arc<AppState>>, Path(user_id): Path<i64>) -> Result<Json<UserDetailVo>, AppError> {
+pub async fn get_detail(State(state): State<Arc<AppState>>, Path(user_id): Path<i64>) -> Result<Json<AjaxResult<UserDetailVo>>, AppError> {
     info!(
         "[HANDLER] Entering user::get_detail with user_id: {}",
         user_id
@@ -116,7 +115,7 @@ pub async fn get_detail(State(state): State<Arc<AppState>>, Path(user_id): Path<
         post_ids,
     };
     // 直接返回这个复杂的VO，前端会把它包装在 `data` 字段里
-    Ok(Json(vo))
+    Ok(Json(AjaxResult::success(vo)))
 }
 
 #[instrument(skip(state, body))]
@@ -226,4 +225,27 @@ pub async fn update_avatar(State(state): State<Arc<AppState>>, Extension(claims)
     Err(AppError::ValidationFailed(
         "请求中未找到名为 'avatarfile' 的文件字段".to_string(),
     ))
+}
+
+
+#[require_permission("system:user:export")] // RuoYi 原始权限标识
+pub async fn export(State(state): State<Arc<AppState>>,    Extension(_claims): Extension<ClaimsData>,    Form(params): Form<ListUserQuery>, // 复用列表查询的参数结构体
+) -> Result<impl IntoResponse, AppError> {
+    info!("[HANDLER] Entering user::export with params: {:?}", params);
+
+    let excel_data = service::export_user_list(&state.db_pool, params).await?;
+
+    let filename = format!("user_{}.xlsx", chrono::Local::now().format("%Y%m%d%H%M%S"));
+
+    let mut headers = HeaderMap::new();
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            .parse()
+            .unwrap(),
+    );
+    headers.insert(header::CONTENT_DISPOSITION, disposition.parse().unwrap());
+
+    Ok((StatusCode::OK, headers, excel_data))
 }

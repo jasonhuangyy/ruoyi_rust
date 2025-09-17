@@ -6,8 +6,10 @@ use argon2::{
     password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
 };
+use chrono::NaiveDateTime;
 use common::error::AppError;
 use common::page::TableDataInfo;
+use rust_xlsxwriter::Workbook;
 use sqlx::{MySql, MySqlPool, Row, Transaction};
 use tracing::{error, info, instrument};
 use uuid::Uuid;
@@ -627,4 +629,132 @@ pub async fn update_user_avatar(db: &MySqlPool, user_id: i64, file_data: &[u8]) 
         user_id, avatar_url
     );
     Ok(avatar_url)
+}
+
+#[instrument(skip(db, params))]
+pub async fn export_user_list(db: &MySqlPool, params: ListUserQuery) -> Result<Vec<u8>, AppError> {
+    info!(
+        "[SERVICE] Starting user list export with params: {:?}",
+        params
+    );
+
+    let mut sql = "
+        SELECT u.user_id, u.user_name, u.nick_name, u.email, u.phonenumber, u.sex, u.status, u.login_ip, u.login_date, u.create_time, d.dept_name
+        FROM sys_user u
+        LEFT JOIN sys_dept d ON u.dept_id = d.dept_id
+        WHERE u.del_flag = '0'"
+        .to_string();
+
+    if let Some(name) = params.user_name {
+        if !name.trim().is_empty() {
+            sql.push_str(&format!(" AND u.user_name LIKE '%{}%'", name));
+        }
+    }
+    if let Some(phone) = params.phonenumber {
+        if !phone.trim().is_empty() {
+            sql.push_str(&format!(" AND u.phonenumber LIKE '%{}%'", phone));
+        }
+    }
+    if let Some(status) = params.status {
+        if !status.trim().is_empty() {
+            sql.push_str(&format!(" AND u.status = '{}'", status));
+        }
+    }
+    if let Some(dept_id) = params.dept_id {
+        sql.push_str(&format!(
+            " AND (u.dept_id = {} OR find_in_set({}, d.ancestors))",
+            dept_id, dept_id
+        ));
+    }
+
+    sql.push_str(" ORDER BY u.create_time DESC");
+
+    #[derive(sqlx::FromRow, Debug)]
+    struct UserExportRow {
+        user_id: i64,
+        user_name: String,
+        nick_name: String,
+        email: Option<String>,
+        phonenumber: Option<String>,
+        sex: Option<String>,
+        status: Option<String>,
+        login_ip: Option<String>,
+        login_date: Option<NaiveDateTime>,
+        create_time: Option<NaiveDateTime>,
+        dept_name: Option<String>,
+    }
+
+    let users: Vec<UserExportRow> = sqlx::query_as(&sql).fetch_all(db).await?;
+    info!("[DB_RESULT] Fetched {} users for export.", users.len());
+
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+
+    let headers = [
+        "用户编号",
+        "用户名称",
+        "用户昵称",
+        "部门",
+        "手机号码",
+        "邮箱",
+        "性别",
+        "帐号状态",
+        "最后登录IP",
+        "最后登录时间",
+        "创建时间",
+    ];
+    for (col_num, header) in headers.iter().enumerate() {
+        worksheet.write(0, col_num as u16, *header)?;
+    }
+
+    for (row_num, user) in users.iter().enumerate() {
+        let row = (row_num + 1) as u32;
+        worksheet.write(row, 0, user.user_id)?;
+        worksheet.write(row, 1, &user.user_name)?;
+        worksheet.write(row, 2, &user.nick_name)?;
+        worksheet.write(row, 3, user.dept_name.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 4, user.phonenumber.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 5, user.email.as_deref().unwrap_or(""))?;
+        worksheet.write(
+            row,
+            6,
+            match user.sex.as_deref() {
+                Some("0") => "男",
+                Some("1") => "女",
+                _ => "未知",
+            },
+        )?;
+        worksheet.write(
+            row,
+            7,
+            if user.status.as_deref() == Some("0") {
+                "正常"
+            } else {
+                "停用"
+            },
+        )?;
+        worksheet.write(row, 8, user.login_ip.as_deref().unwrap_or(""))?;
+        worksheet.write(
+            row,
+            9,
+            user.login_date.map_or("".to_string(), |t| {
+                t.format("%Y-%m-%d %H:%M:%S").to_string()
+            }),
+        )?;
+        worksheet.write(
+            row,
+            10,
+            user.create_time.map_or("".to_string(), |t| {
+                t.format("%Y-%m-%d %H:%M:%S").to_string()
+            }),
+        )?;
+    }
+
+    let buffer = workbook.save_to_buffer()?;
+    info!(
+        "[SERVICE] User export Excel buffer created successfully, size: {} bytes.",
+        buffer.len()
+    );
+
+    Ok(buffer)
 }

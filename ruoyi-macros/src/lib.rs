@@ -35,7 +35,6 @@ impl Parse for PermissionExpr {
     }
 }
 
-
 enum PermissionArgs {
     Single(PermissionExpr),
     All(Vec<PermissionExpr>),
@@ -75,19 +74,15 @@ impl Parse for PermissionArgs {
     }
 }
 
-
 fn find_ident_in_pat(pat: &Pat) -> Option<&Ident> {
     match pat {
         Pat::Ident(pat_ident) => Some(&pat_ident.ident),
         Pat::Type(pat_type) => find_ident_in_pat(&pat_type.pat),
-        Pat::TupleStruct(pat_tuple_struct) => {
-            pat_tuple_struct.elems.iter().find_map(find_ident_in_pat)
-        }
+        Pat::TupleStruct(pat_tuple_struct) => pat_tuple_struct.elems.iter().find_map(find_ident_in_pat),
         Pat::Reference(pat_ref) => find_ident_in_pat(&pat_ref.pat),
         _ => None,
     }
 }
-
 
 #[proc_macro_attribute]
 pub fn require_permission(args: TokenStream, item: TokenStream) -> TokenStream {
@@ -169,7 +164,8 @@ pub fn require_permission(args: TokenStream, item: TokenStream) -> TokenStream {
             let is_admin = claims_ref.user_id == 1;
 
             if !is_admin {
-                let user_perms = match crate::user::service::get_user_permissions(&state_ref.db_pool, claims_ref.user_id).await {
+                // let user_perms = match crate::user::service::get_user_permissions(&state_ref.db_pool, claims_ref.user_id).await {
+                 let user_perms = match common::auth::get_user_permissions(&state_ref.db_pool, claims_ref.user_id).await {
                     Ok(perms) => perms,
                     Err(e) => return Err(e.into()),
                 };

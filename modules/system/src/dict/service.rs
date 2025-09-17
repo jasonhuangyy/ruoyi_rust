@@ -5,11 +5,11 @@ use common::{
     page::TableDataInfo,
 };
 use moka::future::Cache;
-use sqlx::{MySqlPool, Row};
-use tracing::info;
+use rust_xlsxwriter::Workbook;
+use sqlx::{MySql, MySqlPool, QueryBuilder, Row};
+use tracing::{info, instrument};
 
 use super::model::{AddDictDataVo, AddDictTypeVo, DictTypeOptionVo, ListDictDataQuery, ListDictTypeQuery, SysDictType, UpdateDictDataVo, UpdateDictTypeVo};
-
 
 /// 查询字典类型列表（分页）
 pub async fn select_dict_type_list(
@@ -279,3 +279,58 @@ pub async fn refresh_dict_cache(
     println!("[DEBUG] All dict caches have been refreshed.");
     Ok(())
 }
+
+#[instrument(skip(db, params))]
+pub async fn export_dict_type_list(
+    db: &MySqlPool,
+    params: ListDictTypeQuery,
+) -> Result<Vec<u8>, AppError> {
+    info!("[SERVICE] Starting dict type list export with params: {:?}", params);
+
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_dict_type WHERE 1=1");
+
+    if let Some(name) = params.dict_name {
+        if !name.trim().is_empty() {
+            query_builder.push(" AND dict_name LIKE ").push_bind(format!("%{}%", name));
+        }
+    }
+    if let Some(t) = params.dict_type {
+        if !t.trim().is_empty() {
+            query_builder.push(" AND dict_type LIKE ").push_bind(format!("%{}%", t));
+        }
+    }
+    if let Some(s) = params.status {
+        if !s.trim().is_empty() {
+            query_builder.push(" AND status = ").push_bind(s);
+        }
+    }
+
+    query_builder.push(" ORDER BY create_time DESC");
+
+    let dict_types: Vec<SysDictType> = query_builder.build_query_as().fetch_all(db).await?;
+    info!("[DB_RESULT] Fetched {} dict types for export.", dict_types.len());
+
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+
+    let headers = ["字典主键", "字典名称", "字典类型", "状态", "创建时间", "备注"];
+    for (col_num, header) in headers.iter().enumerate() {
+        worksheet.write(0, col_num as u16, *header)?;
+    }
+
+    for (row_num, dict_type) in dict_types.iter().enumerate() {
+        let row = (row_num + 1) as u32;
+        worksheet.write(row, 0, dict_type.dict_id)?;
+        worksheet.write(row, 1, dict_type.dict_name.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 2, dict_type.dict_type.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 3, if dict_type.status.as_deref() == Some("0") { "正常" } else { "停用" })?;
+        worksheet.write(row, 4, dict_type.create_time.map_or("".to_string(), |t| t.format("%Y-%m-%d %H:%M:%S").to_string()))?;
+        worksheet.write(row, 5, dict_type.remark.as_deref().unwrap_or(""))?;
+    }
+
+    let buffer = workbook.save_to_buffer()?;
+    info!("[SERVICE] Dict type Excel buffer created successfully, size: {} bytes.", buffer.len());
+
+    Ok(buffer)
+}
+

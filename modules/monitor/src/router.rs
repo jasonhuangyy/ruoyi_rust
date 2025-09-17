@@ -1,16 +1,24 @@
-use crate::{job, logininfor, online, operlog};
-use axum::Router;
+use crate::operlog::middleware::OperLogLayer;
+use crate::{job, job_log, logininfor, online, operlog};
+use axum::{middleware, Router};
+use framework::middleware::auth;
 use framework::state::AppState;
 use std::sync::Arc;
 
 pub fn api_router(state: Arc<AppState>) -> Router {
-    // 创建一个受保护的路由，因为所有监控功能都需要登录
-    let protected_router = Router::new()
-        .merge(operlog::router::router()) // 合并操作日志的路由
-        .merge(logininfor::router::router()) 
+    let monitor_routes = Router::new()
+        .merge(operlog::router::router())
+        .merge(logininfor::router::router())
         .merge(online::router::router())
         .merge(job::router::router())
-        .with_state(state); // 将共享状态应用到所有路由
+        .merge(job_log::router::router());
 
-    protected_router
+    let protected_api = Router::new()
+        .merge(monitor_routes)
+        .layer(OperLogLayer) 
+        .layer(middleware::from_fn_with_state(state.clone(), auth)); 
+ 
+    Router::new()
+        .merge(protected_api)
+        .with_state(state)
 }

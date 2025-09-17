@@ -29,4 +29,8 @@ pub fn router() -> Router<Arc<AppState>> {
             "/monitor/logininfor/unlock/:userName",
             post(handler::unlock.layer(LogLayer::new("登录日志", BusinessType::Update))), // RuoYi 中是POST方法
         )
+        .route(
+            "/monitor/logininfor/export",
+            post(handler::export.layer(LogLayer::new("登录日志", BusinessType::Export)))
+        )
 }

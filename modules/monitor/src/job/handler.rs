@@ -2,13 +2,17 @@ use super::{
     model::{AddJobVo, ChangeStatusVo, ListJobQuery, SysJob, UpdateJobVo},
     service,
 };
-use axum::response::IntoResponse;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Form, Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
+    response::IntoResponse,
+    Extension,
     Json,
 };
 use common::{error::AppError, page::TableDataInfo, response::AjaxResult};
+use framework::jwt::ClaimsData;
 use framework::state::AppState;
+use ruoyi_macros::require_permission;
 use serde_json::json;
 use std::sync::Arc;
 use tracing::info;
@@ -96,4 +100,31 @@ pub async fn run_once(
     info!("[HANDLER] Entering job::run_once for job_id: {}", job_id);
     service::run_job_once(state, job_id).await?;
     Ok(Json(AjaxResult::<()>::success_msg("执行成功")))
+}
+
+
+#[require_permission("monitor:job:export")]
+pub async fn export(
+    State(state): State<Arc<AppState>>,
+    Extension(_claims): Extension<ClaimsData>,
+    Form(params): Form<ListJobQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    info!("[HANDLER] Entering job::export with params: {:?}", params);
+ 
+    let excel_data = service::export_job_list(&state.db_pool, params).await?;
+ 
+    let filename = format!("job_{}.xlsx", chrono::Local::now().format("%Y%m%d%H%M%S"));
+ 
+    let mut headers = HeaderMap::new();
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".parse().unwrap()
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        disposition.parse().unwrap()
+    );
+ 
+    Ok((StatusCode::OK, headers, excel_data))
 }

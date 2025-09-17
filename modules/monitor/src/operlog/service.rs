@@ -1,8 +1,9 @@
 use super::model::{ListOperLogQuery, SysOperLog};
 use common::error::AppError;
 use common::page::TableDataInfo;
-use sqlx::{MySqlPool, Row};
-use tracing::info;
+use rust_xlsxwriter::{Workbook, XlsxError};
+use sqlx::{MySql, MySqlPool, QueryBuilder, Row};
+use tracing::{info, instrument};
 
 /// 新增一条操作日志记录
 ///
@@ -118,4 +119,88 @@ pub async fn clean_oper_log(db: &MySqlPool) -> Result<u64, AppError> {
     let result = sqlx::query("TRUNCATE TABLE sys_oper_log").execute(db).await?;
     info!("[DB_RESULT] Truncated sys_oper_log table.");
     Ok(result.rows_affected())
+}
+
+#[instrument(skip(db, params))]
+pub async fn export_oper_log_list(
+    db: &MySqlPool,
+    params: ListOperLogQuery,
+) -> Result<Vec<u8>, AppError> {
+    info!("[SERVICE] Starting oper log list export with params: {:?}", params);
+
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_oper_log WHERE 1=1");
+
+    if let Some(title) = params.title {
+        if !title.trim().is_empty() {
+            query_builder.push(" AND title LIKE ").push_bind(format!("%{}%", title));
+        }
+    }
+    if let Some(oper_name) = params.oper_name {
+        if !oper_name.trim().is_empty() {
+            query_builder.push(" AND oper_name LIKE ").push_bind(format!("%{}%", oper_name));
+        }
+    }
+    if let Some(business_type) = params.business_type {
+        query_builder.push(" AND business_type = ").push_bind(business_type);
+    }
+    if let Some(status) = params.status {
+        query_builder.push(" AND status = ").push_bind(status);
+    }
+    if let Some(begin_time) = params.begin_time {
+        if !begin_time.trim().is_empty() {
+            query_builder.push(" AND date_format(oper_time,'%y%m%d') >= date_format(").push_bind(begin_time).push(",'%y%m%d')");
+        }
+    }
+    if let Some(end_time) = params.end_time {
+        if !end_time.trim().is_empty() {
+            query_builder.push(" AND date_format(oper_time,'%y%m%d') <= date_format(").push_bind(end_time).push(",'%y%m%d')");
+        }
+    }
+    query_builder.push(" ORDER BY oper_time DESC");
+
+    let oper_logs: Vec<SysOperLog> = query_builder.build_query_as().fetch_all(db).await?;
+
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+
+    let headers = ["日志主键", "系统模块", "操作类型", "请求方式", "操作人员", "主机", "操作地点", "操作状态", "操作日期", "消耗时间(ms)"];
+    for (col_num, header) in headers.iter().enumerate() {
+        worksheet.write(0, col_num as u16, *header)?;
+    }
+
+    for (row_num, log) in oper_logs.iter().enumerate() {
+        let row = (row_num + 1) as u32;
+
+        let business_type_str = match log.business_type {
+            Some(0) => "其它",
+            Some(1) => "新增",
+            Some(2) => "修改",
+            Some(3) => "删除",
+            Some(4) => "授权",
+            Some(5) => "导出",
+            Some(6) => "导入",
+            Some(7) => "强退",
+            Some(8) => "生成代码",
+            Some(9) => "清空数据",
+            _ => "未知",
+        };
+
+        let status_str = if log.status == Some(0) { "正常" } else { "异常" };
+
+        worksheet.write(row, 0, log.oper_id)?;
+        worksheet.write(row, 1, log.title.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 2, business_type_str)?;
+        worksheet.write(row, 3, log.request_method.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 4, log.oper_name.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 5, log.oper_ip.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 6, log.oper_location.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 7, status_str)?;
+        worksheet.write(row, 8, log.oper_time.map_or("".to_string(), |t| t.format("%Y-%m-%d %H:%M:%S").to_string()))?;
+        worksheet.write(row, 9, log.cost_time.unwrap_or(0))?;
+    }
+
+    let buffer = workbook.save_to_buffer()?;
+    info!("[SERVICE] Excel buffer created successfully, size: {} bytes.", buffer.len());
+
+    Ok(buffer)
 }

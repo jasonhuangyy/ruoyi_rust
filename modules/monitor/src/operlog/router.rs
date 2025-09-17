@@ -8,6 +8,7 @@ use axum::{
 };
 use framework::state::AppState;
 use std::sync::Arc;
+use axum::routing::post;
 
 /// 操作日志路由
 pub fn router() -> Router<Arc<AppState>> {
@@ -23,5 +24,9 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/monitor/operlog/clean",
             delete(handler::clean.layer(LogLayer::new("操作日志", BusinessType::Clean))),
+        )
+        .route(
+            "/monitor/operlog/export",
+            post(handler::export.layer(LogLayer::new("操作日志", BusinessType::Export)))
         )
 }

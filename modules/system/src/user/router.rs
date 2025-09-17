@@ -49,4 +49,8 @@ pub fn router() -> Router<Arc<AppState>> {
             "/system/user/resetPwd",
             put(handler::reset_pwd).layer(LogLayer::new("用户管理", BusinessType::Update)),
         )
+        .route(
+            "/system/user/export",
+            post(handler::export.layer(LogLayer::new("用户管理", BusinessType::Export))),
+        )
 }

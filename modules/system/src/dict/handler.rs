@@ -3,10 +3,11 @@ use super::{
     service,
 };
 use crate::dict::model::{AddDictDataVo, AddDictTypeVo, DictTypeOptionVo, ListDictDataQuery, UpdateDictDataVo, UpdateDictTypeVo};
-use axum::response::IntoResponse;
 use axum::{
-    extract::{Path, Query, State},
-    Json,
+    extract::{Form, Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
+    response::IntoResponse,
+    Extension, Json
 };
 use common::models::dict_model::SysDictData;
 use common::{
@@ -14,9 +15,12 @@ use common::{
     page::TableDataInfo,
     response::AjaxResult,
 };
+use framework::jwt::ClaimsData;
 use framework::state::AppState;
+use ruoyi_macros::require_permission;
 use serde_json::json;
 use std::sync::Arc;
+
 
 /// 获取字典类型列表 (分页)
 pub async fn list_types(
@@ -133,4 +137,28 @@ pub async fn get_data_by_type(
     let dict_data = service::select_dict_data_by_type(&state.db_pool, &state.dict_cache, &dict_type).await?;
     Ok(Json(AjaxResult::success(dict_data)))
 }
- 
+
+
+#[require_permission("system:dict:export")] // 加上权限控制
+pub async fn export_types(
+    State(state): State<Arc<AppState>>,
+    Extension(_claims): Extension<ClaimsData>,
+    Form(params): Form<ListDictTypeQuery>, // 使用 Form 提取器
+) -> Result<impl IntoResponse, AppError> {
+    let excel_data = service::export_dict_type_list(&state.db_pool, params).await?;
+
+    let filename = format!("dict_type_{}.xlsx", chrono::Local::now().format("%Y%m%d%H%M%S"));
+
+    let mut headers = HeaderMap::new();
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".parse().unwrap()
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        disposition.parse().unwrap()
+    );
+
+    Ok((StatusCode::OK, headers, excel_data))
+}

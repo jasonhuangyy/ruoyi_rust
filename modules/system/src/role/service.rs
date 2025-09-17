@@ -3,6 +3,7 @@ use common::{
     error::AppError,
     page::TableDataInfo,
 };
+use rust_xlsxwriter::Workbook;
 use sqlx::{MySql, MySqlPool, QueryBuilder, Row, Transaction};
 use tracing::{error, info, instrument};
 
@@ -257,4 +258,67 @@ pub async fn select_all_active_roles(db: &MySqlPool) -> Result<Vec<SysRole>, App
 
     info!("[DB_RESULT] Found {} active roles.", roles.len());
     Ok(roles)
+}
+
+#[instrument(skip(db, params))]
+pub async fn export_role_list(
+    db: &MySqlPool,
+    params: ListRoleQuery,
+) -> Result<Vec<u8>, AppError> {
+    info!("[SERVICE] Starting role list export with params: {:?}", params);
+
+    let mut sql = "SELECT * FROM sys_role WHERE del_flag = '0'".to_string();
+
+    if let Some(name) = params.role_name {
+        if !name.trim().is_empty() {
+            sql.push_str(&format!(" AND role_name LIKE '%{}%'", name));
+        }
+    }
+    if let Some(key) = params.role_key {
+        if !key.trim().is_empty() {
+            sql.push_str(&format!(" AND role_key LIKE '%{}%'", key));
+        }
+    }
+    if let Some(status) = params.status {
+        if !status.trim().is_empty() {
+            sql.push_str(&format!(" AND status = '{}'", status));
+        }
+    }
+    if let Some(begin_time) = params.begin_time {
+        if !begin_time.trim().is_empty() {
+            sql.push_str(&format!(" AND date_format(create_time,'%y%m%d') >= date_format('{}','%y%m%d')", begin_time));
+        }
+    }
+    if let Some(end_time) = params.end_time {
+        if !end_time.trim().is_empty() {
+            sql.push_str(&format!(" AND date_format(create_time,'%y%m%d') <= date_format('{}','%y%m%d')", end_time));
+        }
+    }
+    sql.push_str(" ORDER BY role_sort");
+
+    let roles: Vec<SysRole> = sqlx::query_as(&sql).fetch_all(db).await?;
+    info!("[DB_RESULT] Fetched {} roles for export.", roles.len());
+
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+
+    let headers = ["角色编号", "角色名称", "权限字符", "显示顺序", "状态", "创建时间"];
+    for (col_num, header) in headers.iter().enumerate() {
+        worksheet.write(0, col_num as u16, *header)?;
+    }
+
+    for (row_num, role) in roles.iter().enumerate() {
+        let row = (row_num + 1) as u32;
+        worksheet.write(row, 0, role.role_id)?;
+        worksheet.write(row, 1, &role.role_name)?;
+        worksheet.write(row, 2, &role.role_key)?;
+        worksheet.write(row, 3, role.role_sort)?;
+        worksheet.write(row, 4, if role.status == "0" { "正常" } else { "停用" })?;
+        worksheet.write(row, 5, role.create_time.map_or("".to_string(), |t| t.format("%Y-%m-%d %H:%M:%S").to_string()))?;
+    }
+
+    let buffer = workbook.save_to_buffer()?;
+    info!("[SERVICE] Excel buffer created successfully, size: {} bytes.", buffer.len());
+
+    Ok(buffer)
 }

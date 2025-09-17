@@ -29,19 +29,22 @@ pub struct SysOperLog {
 
 /// 用于操作日志列表查询的参数结构体
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
 pub struct ListOperLogQuery {
     // 业务查询参数
+    #[serde(rename = "title")]
     pub title: Option<String>,
+    #[serde(rename = "operName")]
     pub oper_name: Option<String>,
+    #[serde(rename = "businessType")]
     pub business_type: Option<i32>,
+    #[serde(rename = "status")]
     pub status: Option<i32>,
-    // 日期范围查询
     #[serde(rename = "params[beginTime]")]
     pub begin_time: Option<String>,
     #[serde(rename = "params[endTime]")]
     pub end_time: Option<String>,
-    // 分页参数
+    #[serde(rename = "pageNum")]
     pub page_num: Option<u64>,
+    #[serde(rename = "pageSize")]
     pub page_size: Option<u64>,
 }

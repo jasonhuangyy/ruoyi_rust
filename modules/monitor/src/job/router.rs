@@ -1,5 +1,6 @@
 use super::handler;
 use crate::operlog::{extractor::BusinessType, layer::LogLayer};
+use axum::handler::Handler;
 use axum::{
     routing::{get, post, put},
     Router,
@@ -26,12 +27,14 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route(
             "/monitor/job/changeStatus",
-            put(handler::change_status)
-                .layer(LogLayer::new("定时任务", BusinessType::Update)),
+            put(handler::change_status).layer(LogLayer::new("定时任务", BusinessType::Update)),
         )
         .route(
             "/monitor/job/run/:jobId",
-            put(handler::run_once)
-                .layer(LogLayer::new("定时任务", BusinessType::Other)),
+            put(handler::run_once).layer(LogLayer::new("定时任务", BusinessType::Other)),
+        )
+        .route(
+            "/monitor/job/export",
+            post(handler::export.layer(LogLayer::new("定时任务", BusinessType::Export))),
         )
 }

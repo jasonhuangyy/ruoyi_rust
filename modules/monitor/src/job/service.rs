@@ -8,6 +8,8 @@ use std::str::ParseBoolError;
 use std::sync::Arc;
 use tokio_cron_scheduler::Job;
 use tracing::{debug, error, info, instrument, warn};
+use rust_xlsxwriter::{Workbook, XlsxError};
+use sqlx::{MySql, QueryBuilder};
 
 /// 查询定时任务列表（分页）
 pub async fn select_job_list(
@@ -439,5 +441,75 @@ async fn execute_task(state: Arc<AppState>, invoke_target: String) {
     }
 }
 
+#[instrument(skip(db, params))]
+pub async fn export_job_list(db: &MySqlPool, params: ListJobQuery) -> Result<Vec<u8>, AppError> {
+    info!(
+        "[SERVICE] Starting job list export with params: {:?}",
+        params
+    );
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_job WHERE 1=1");
 
+    if let Some(name) = params.job_name {
+        if !name.trim().is_empty() {
+            query_builder
+                .push(" AND job_name LIKE ")
+                .push_bind(format!("%{}%", name));
+        }
+    }
+    if let Some(group) = params.job_group {
+        if !group.trim().is_empty() {
+            query_builder.push(" AND job_group = ").push_bind(group);
+        }
+    }
+    if let Some(status) = params.status {
+        if !status.trim().is_empty() {
+            query_builder.push(" AND status = ").push_bind(status);
+        }
+    }
+    query_builder.push(" ORDER BY job_id DESC");
 
+    let jobs: Vec<SysJob> = query_builder.build_query_as().fetch_all(db).await?;
+    info!("[DB_RESULT] Fetched {} jobs for export.", jobs.len());
+
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+    let headers = [
+        "任务ID",
+        "任务名称",
+        "任务组名",
+        "调用目标字符串",
+        "cron执行表达式",
+        "状态",
+    ];
+    for (col_num, header) in headers.iter().enumerate() {
+        worksheet.write(0, col_num as u16, *header)?;
+    }
+    for (row_num, job) in jobs.iter().enumerate() {
+        let row = (row_num + 1) as u32;
+
+        let status_str = if job.status.as_deref() == Some("0") {
+            "正常"
+        } else {
+            "暂停"
+        };
+        let group_str = match job.job_group.as_deref() {
+            Some("DEFAULT") => "默认",
+            Some("SYSTEM") => "系统",
+            _ => "未知",
+        };
+
+        worksheet.write(row, 0, job.job_id)?;
+        worksheet.write(row, 1, job.job_name.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 2, group_str)?;
+        worksheet.write(row, 3, job.invoke_target.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 4, job.cron_expression.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 5, status_str)?;
+    }
+    let buffer = workbook.save_to_buffer()?;
+    info!(
+        "[SERVICE] Excel buffer created successfully, size: {} bytes.",
+        buffer.len()
+    );
+
+    Ok(buffer)
+}

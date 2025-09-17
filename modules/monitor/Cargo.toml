@@ -15,8 +15,10 @@ tokio = {workspace = true}
 
 common = { path = "../../common" }
 framework = { path = "../../framework" }
+ruoyi-macros = {path = "../../ruoyi-macros"}
 futures-util = "0.3.31"
 tower = "0.5.2"
 moka = { workspace = true }
 uuid = { workspace = true }
 tokio-cron-scheduler = {workspace = true}
+rust_xlsxwriter = {workspace = true}

@@ -3,13 +3,12 @@ use super::{
     service,
 };
 use axum::response::IntoResponse;
-use axum::{extract::{Path, Query, State}, Extension, Json};
-use common::{
-    auth::Permission,
-    error::AppError,
-    page::TableDataInfo,
-    response::AjaxResult
+use axum::{
+    extract::{Form, Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
+    Extension, Json,
 };
+use common::{auth::Permission, error::AppError, page::TableDataInfo, response::AjaxResult};
 use framework::jwt::ClaimsData;
 use framework::state::AppState;
 use ruoyi_macros::require_permission;
@@ -104,3 +103,24 @@ pub async fn change_status(
     Ok(Json(AjaxResult::<()>::success_msg("状态修改成功")))
 }
 
+#[require_permission("system:role:export")]  
+pub async fn export(State(state): State<Arc<AppState>>,    Extension(_claims): Extension<ClaimsData>,    Form(params): Form<ListRoleQuery>, // 前端使用 application/x-www-form-urlencoded, 所以用 Form
+) -> Result<impl IntoResponse, AppError> {
+    info!("[HANDLER] Entering role::export with params: {:?}", params);
+
+    let excel_data = service::export_role_list(&state.db_pool, params).await?;
+
+    let filename = format!("role_{}.xlsx", chrono::Local::now().format("%Y%m%d%H%M%S"));
+
+    let mut headers = HeaderMap::new();
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            .parse()
+            .unwrap(),
+    );
+    headers.insert(header::CONTENT_DISPOSITION, disposition.parse().unwrap());
+
+    Ok((StatusCode::OK, headers, excel_data))
+}

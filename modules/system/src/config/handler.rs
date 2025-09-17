@@ -3,7 +3,8 @@ use super::{
     service,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Form, Path, Query, State},
+    http::{header, HeaderMap, StatusCode}, // 导入 HeaderMap 和 StatusCode
     response::IntoResponse,
     Extension, Json,
 };
@@ -46,13 +47,13 @@ pub async fn get_info(
 pub async fn get_config_by_key(
     State(state): State<Arc<AppState>>,
     Path(config_key): Path<String>,
-) -> Result<impl IntoResponse, AppError> {
-    let config_value = service::select_config_value_by_key(&state, &config_key).await?;
+) -> Result<impl IntoResponse, AppError> { 
+    let config_value = service::select_config_value_by_key(&state, &config_key).await?; 
     let response = json!({
         "code": 200,
-        "msg": "操作成功",
-        "data": config_value
+        "msg": config_value  
     });
+
     Ok(Json(response))
 }
 
@@ -98,4 +99,27 @@ pub async fn refresh_cache(
 ) -> Result<Json<AjaxResult<()>>, AppError> {
     service::refresh_cache(&state).await?;
     Ok(Json(AjaxResult::<&str>::success_msg("刷新成功")))
+}
+#[require_permission("system:config:export")] // 建议添加权限，根据RuoYi习惯应该是这个
+pub async fn export(
+    State(state): State<Arc<AppState>>,
+    Extension(_claims): Extension<ClaimsData>,
+    Form(params): Form<ListConfigQuery>, // 使用 Form 提取器来接收 x-www-form-urlencoded 数据
+) -> Result<impl IntoResponse, AppError> {
+    let excel_data = service::export_config_list(&state.db_pool, params).await?;
+
+    let filename = format!("config_{}.xlsx", chrono::Local::now().format("%Y%m%d%H%M%S"));
+
+    let mut headers = HeaderMap::new();
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".parse().unwrap()
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        disposition.parse().unwrap()
+    );
+
+    Ok((StatusCode::OK, headers, excel_data))
 }
