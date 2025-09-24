@@ -1,7 +1,7 @@
 use super::model::{ListJobLogQuery, SysJobLog};
 use common::{error::AppError, page::TableDataInfo};
-use rust_xlsxwriter::{Workbook, XlsxError};
-use sqlx::{MySql, MySqlPool, QueryBuilder, Row};
+use rust_xlsxwriter::{Workbook, };
+use sqlx::{MySql, MySqlPool, QueryBuilder};
 use tracing::{info, instrument};
 
 #[instrument(skip(db, ids))]
@@ -12,7 +12,6 @@ pub async fn delete_job_log_by_ids(db: &MySqlPool, ids: &[i64]) -> Result<u64, A
         return Ok(0);
     }
 
-    // 使用 QueryBuilder 安全地构建 IN 查询
     let mut query_builder = QueryBuilder::new("DELETE FROM sys_job_log WHERE job_log_id IN (");
     let mut separated = query_builder.separated(",");
     for id in ids {

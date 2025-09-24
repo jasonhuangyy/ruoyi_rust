@@ -3,12 +3,12 @@ use crate::job::task_drop_pending_file::cleanup_expired_pending_files;
 use crate::logininfor;
 use common::{error::AppError, page::TableDataInfo};
 use framework::state::AppState;
-use sqlx::{MySqlPool, Row};
+use sqlx::{MySqlPool};
 use std::str::ParseBoolError;
 use std::sync::Arc;
 use tokio_cron_scheduler::Job;
 use tracing::{debug, error, info, instrument, warn};
-use rust_xlsxwriter::{Workbook, XlsxError};
+use rust_xlsxwriter::{Workbook, };
 use sqlx::{MySql, QueryBuilder};
 
 /// 查询定时任务列表（分页）
@@ -21,35 +21,43 @@ pub async fn select_job_list(
         params
     );
 
-    let mut sql = "SELECT * FROM sys_job WHERE 1=1".to_string();
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_job WHERE 1=1");
+    let mut count_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT COUNT(*) FROM sys_job WHERE 1=1");
+
     if let Some(name) = params.job_name {
         if !name.trim().is_empty() {
-            sql.push_str(&format!(" AND job_name LIKE '%{}%'", name));
+            let condition = format!("%{}%", name);
+            query_builder.push(" AND job_name LIKE ").push_bind(condition.clone());
+            count_builder.push(" AND job_name LIKE ").push_bind(condition);
         }
     }
     if let Some(group) = params.job_group {
         if !group.trim().is_empty() {
-            sql.push_str(&format!(" AND job_group = '{}'", group));
+            query_builder.push(" AND job_group = ").push_bind(group.clone());
+            count_builder.push(" AND job_group = ").push_bind(group);
         }
     }
     if let Some(status) = params.status {
         if !status.trim().is_empty() {
-            sql.push_str(&format!(" AND status = '{}'", status));
+            query_builder.push(" AND status = ").push_bind(status.clone());
+            count_builder.push(" AND status = ").push_bind(status);
         }
     }
 
-    let count_sql = format!("SELECT COUNT(*) as count FROM ({}) temp_table", sql);
-    let total: i64 = sqlx::query(&count_sql).fetch_one(db).await?.get("count");
+    let total_row: (i64,) = count_builder.build_query_as().fetch_one(db).await?;
+    let total = total_row.0;
 
     let page_num = params.page_num.unwrap_or(1);
     let page_size = params.page_size.unwrap_or(10);
     let offset = (page_num - 1) * page_size;
-    sql.push_str(&format!(
-        " ORDER BY job_id DESC LIMIT {} OFFSET {}",
-        page_size, offset
-    ));
 
-    let rows: Vec<SysJob> = sqlx::query_as(&sql).fetch_all(db).await?;
+    query_builder
+        .push(" ORDER BY job_id DESC LIMIT ")
+        .push_bind(page_size)
+        .push(" OFFSET ")
+        .push_bind(offset);
+
+    let rows: Vec<SysJob> = query_builder.build_query_as().fetch_all(db).await?;
     info!(
         "[DB_RESULT] Found {} jobs for the current page.",
         rows.len()

@@ -1,12 +1,13 @@
 use super::model::{AddMenuVo, MenuTreeSelectVo, MenuTreeVo, SysMenu, UpdateMenuVo};
 use common::error::AppError;
-use sqlx::MySqlPool;
+use sqlx::{MySql, MySqlPool, QueryBuilder};
 use tracing::info;
 
-pub async fn select_menu_tree_by_user_id(
-    db: &MySqlPool,    user_id: i64,
-) -> Result<Vec<MenuTreeVo>, AppError> {
-    info!("[SERVICE] Entering select_menu_tree_by_user_id for user_id: {}", user_id);
+pub async fn select_menu_tree_by_user_id(db: &MySqlPool, user_id: i64) -> Result<Vec<MenuTreeVo>, AppError> {
+    info!(
+        "[SERVICE] Entering select_menu_tree_by_user_id for user_id: {}",
+        user_id
+    );
 
     let menus: Vec<SysMenu>;
 
@@ -25,9 +26,8 @@ pub async fn select_menu_tree_by_user_id(
             WHERE menu_type IN ('M', 'C') AND status = '0'
             ORDER BY parent_id, order_num"
         )
-            .fetch_all(db)
-            .await?;
-
+        .fetch_all(db)
+        .await?;
     } else {
         info!("[AUTH] User is not admin, fetching menus based on roles.");
 
@@ -49,11 +49,15 @@ pub async fn select_menu_tree_by_user_id(
             ORDER BY m.parent_id, m.order_num",
             user_id
         )
-            .fetch_all(db)
-            .await?;
+        .fetch_all(db)
+        .await?;
     }
 
-    info!("[DB_RESULT] Found {} menus for user_id {}.", menus.len(), user_id);
+    info!(
+        "[DB_RESULT] Found {} menus for user_id {}.",
+        menus.len(),
+        user_id
+    );
 
     let menu_tree = build_menu_tree(menus);
     Ok(menu_tree)
@@ -71,28 +75,28 @@ pub async fn select_menu_list(db: &MySqlPool) -> Result<Vec<SysMenu>, AppError> 
     Ok(menus)
 }
 
-pub async fn select_menu_list_with_params(
-    db: &MySqlPool,    menu_name: Option<&str>,    status: Option<&str>,
-) -> Result<Vec<SysMenu>, AppError> {
-    let mut sql = "SELECT * FROM sys_menu WHERE menu_type IN ('M', 'C') ".to_string();
+pub async fn select_menu_list_with_params(db: &MySqlPool, menu_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysMenu>, AppError> {
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_menu WHERE menu_type IN ('M', 'C') ");
 
     if let Some(name) = menu_name {
         if !name.trim().is_empty() {
-            sql.push_str(&format!(" AND menu_name LIKE '%{}%'", name));
+            query_builder
+                .push(" AND menu_name LIKE ")
+                .push_bind(format!("%{}%", name));
         }
     }
     if let Some(s) = status {
         if !s.trim().is_empty() {
-            sql.push_str(&format!(" AND status = '{}'", s));
+            query_builder.push(" AND status = ").push_bind(s);
         }
     }
 
-    sql.push_str(" ORDER BY parent_id, order_num");
+    query_builder.push(" ORDER BY parent_id, order_num");
 
-    let menus = sqlx::query_as(&sql).fetch_all(db).await?;
+    let menus = query_builder.build_query_as().fetch_all(db).await?;
+
     Ok(menus)
 }
-
 /// 根据菜单ID查询菜单详情
 pub async fn select_menu_by_id(db: &MySqlPool, menu_id: i64) -> Result<SysMenu, AppError> {
     let menu = sqlx::query_as!(SysMenu, "SELECT * FROM sys_menu WHERE menu_id = ?", menu_id)
@@ -111,20 +115,29 @@ pub async fn add_menu(db: &MySqlPool, menu: AddMenuVo) -> Result<u64, AppError> 
             INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, is_frame, is_cache, menu_type, visible, status, perms, icon, remark, create_by, create_time)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())
         "#,
-        menu.menu_name, menu.parent_id, menu.order_num, menu.path, menu.component,
+        menu.menu_name,
+        menu.parent_id,
+        menu.order_num,
+        menu.path,
+        menu.component,
         is_frame_num,
         is_cache_num,
-        menu.menu_type, menu.visible, menu.status, menu.perms, menu.icon, menu.remark
+        menu.menu_type,
+        menu.visible,
+        menu.status,
+        menu.perms,
+        menu.icon,
+        menu.remark
     )
-        .execute(db)
-        .await?;
+    .execute(db)
+    .await?;
     Ok(result.rows_affected())
 }
 
 /// 修改菜单
-pub async fn update_menu(db: &MySqlPool, menu: UpdateMenuVo) -> Result<u64, AppError> { 
-    let is_frame_num: i32 = menu.is_frame ;
-    let is_cache_num: i32 = menu.is_cache ;
+pub async fn update_menu(db: &MySqlPool, menu: UpdateMenuVo) -> Result<u64, AppError> {
+    let is_frame_num: i32 = menu.is_frame;
+    let is_cache_num: i32 = menu.is_cache;
 
     let result = sqlx::query!(
         r#"
@@ -132,13 +145,23 @@ pub async fn update_menu(db: &MySqlPool, menu: UpdateMenuVo) -> Result<u64, AppE
             SET menu_name = ?, parent_id = ?, order_num = ?, path = ?, component = ?, is_frame = ?, is_cache = ?, menu_type = ?, visible = ?, status = ?, perms = ?, icon = ?, remark = ?, update_by = 'admin', update_time = NOW()
             WHERE menu_id = ?
         "#,
-        menu.menu_name, menu.parent_id, menu.order_num, menu.path, menu.component,
+        menu.menu_name,
+        menu.parent_id,
+        menu.order_num,
+        menu.path,
+        menu.component,
         is_frame_num,
         is_cache_num,
-        menu.menu_type, menu.visible, menu.status, menu.perms, menu.icon, menu.remark, menu.menu_id
+        menu.menu_type,
+        menu.visible,
+        menu.status,
+        menu.perms,
+        menu.icon,
+        menu.remark,
+        menu.menu_id
     )
-        .execute(db)
-        .await?;
+    .execute(db)
+    .await?;
     Ok(result.rows_affected())
 }
 
@@ -160,19 +183,21 @@ pub async fn select_menu_list_for_treeselect(db: &MySqlPool) -> Result<Vec<SysMe
         SysMenu,
         "SELECT * FROM sys_menu WHERE status = '0' ORDER BY parent_id, order_num"
     )
-        .fetch_all(db)
-        .await?;
+    .fetch_all(db)
+    .await?;
     info!("[DB_RESULT] Found {} menus for treeselect.", menus.len());
     Ok(menus)
 }
-
 
 /// 辅助函数：将菜单的扁平列表构建成树形结构
 pub fn build_menu_tree(menus: Vec<SysMenu>) -> Vec<MenuTreeVo> {
     // 1. 将所有 SysMenu 转换为 MenuTreeVo
     let mut all_nodes: Vec<MenuTreeVo> = menus
         .into_iter()
-        .map(|menu| MenuTreeVo { menu, children: Vec::new() })
+        .map(|menu| MenuTreeVo {
+            menu,
+            children: Vec::new(),
+        })
         .collect();
 
     // 2. 筛选出所有根节点（parent_id 为 0 或 null）
@@ -221,7 +246,6 @@ fn build_children_for_menu(parent: &mut MenuTreeVo, all_nodes: &mut Vec<MenuTree
     children.sort_by_key(|a| a.menu.order_num.unwrap_or(0));
     parent.children = children;
 }
-
 
 /// 辅助函数：将扁平的 SysMenu 列表构建成前端需要的 MenuTreeSelectVo 树形结构
 pub fn build_menu_treeselect(menus: Vec<SysMenu>) -> Vec<MenuTreeSelectVo> {

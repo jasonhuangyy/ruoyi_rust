@@ -20,8 +20,10 @@ pub struct ListJobLogQuery {
     pub job_name: Option<String>,
     pub job_group: Option<String>,
     pub status: Option<String>,
+    #[allow(dead_code)]
     #[serde(rename = "params[beginTime]")]
     pub begin_time: Option<String>,
+    #[allow(dead_code)]
     #[serde(rename = "params[endTime]")]
     pub end_time: Option<String>,
     pub page_num: Option<u64>,

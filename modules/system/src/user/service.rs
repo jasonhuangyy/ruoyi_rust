@@ -10,7 +10,7 @@ use chrono::NaiveDateTime;
 use common::error::AppError;
 use common::page::TableDataInfo;
 use rust_xlsxwriter::Workbook;
-use sqlx::{MySql, MySqlPool, Row, Transaction};
+use sqlx::{MySql, MySqlPool, QueryBuilder, Transaction};
 use tracing::{error, info, instrument};
 use uuid::Uuid;
 
@@ -20,72 +20,94 @@ pub async fn select_user_list(db: &MySqlPool, params: ListUserQuery) -> Result<T
         params
     );
 
-    // 基础SQL查询，使用LEFT JOIN关联部门表
-    let mut sql = "
-        SELECT u.*, d.dept_name
-        FROM sys_user u
-        LEFT JOIN sys_dept d ON u.dept_id = d.dept_id
-        WHERE u.del_flag = '0'"
-        .to_string();
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
+        "SELECT u.*, d.dept_name
+         FROM sys_user u
+         LEFT JOIN sys_dept d ON u.dept_id = d.dept_id
+         WHERE u.del_flag = '0'",
+    );
 
-    // 动态构建WHERE子句
+    let mut count_builder: QueryBuilder<MySql> = QueryBuilder::new(
+        "SELECT COUNT(*)
+         FROM sys_user u
+         LEFT JOIN sys_dept d ON u.dept_id = d.dept_id
+         WHERE u.del_flag = '0'",
+    );
+
     if let Some(name) = params.user_name {
         if !name.trim().is_empty() {
-            sql.push_str(&format!(" AND u.user_name LIKE '%{}%'", name));
+            let condition = format!("%{}%", name);
+            query_builder
+                .push(" AND u.user_name LIKE ")
+                .push_bind(condition.clone());
+            count_builder
+                .push(" AND u.user_name LIKE ")
+                .push_bind(condition);
         }
     }
     if let Some(phone) = params.phonenumber {
         if !phone.trim().is_empty() {
-            sql.push_str(&format!(" AND u.phonenumber LIKE '%{}%'", phone));
+            let condition = format!("%{}%", phone);
+            query_builder
+                .push(" AND u.phonenumber LIKE ")
+                .push_bind(condition.clone());
+            count_builder
+                .push(" AND u.phonenumber LIKE ")
+                .push_bind(condition);
         }
     }
     if let Some(status) = params.status {
         if !status.trim().is_empty() {
-            sql.push_str(&format!(" AND u.status = '{}'", status));
+            query_builder
+                .push(" AND u.status = ")
+                .push_bind(status.clone());
+            count_builder.push(" AND u.status = ").push_bind(status);
         }
     }
 
     if let Some(dept_id) = params.dept_id {
-        sql.push_str(&format!(
-            " AND (u.dept_id = {} OR find_in_set({}, d.ancestors))",
-            dept_id, dept_id
-        ));
+        query_builder
+            .push(" AND (u.dept_id = ")
+            .push_bind(dept_id)
+            .push(" OR find_in_set(")
+            .push_bind(dept_id)
+            .push(", d.ancestors))");
+        count_builder
+            .push(" AND (u.dept_id = ")
+            .push_bind(dept_id)
+            .push(" OR find_in_set(")
+            .push_bind(dept_id)
+            .push(", d.ancestors))");
     }
 
-    let count_sql = format!("SELECT COUNT(*) as count FROM ({}) temp_table", sql);
-    let total: i64 = sqlx::query(&count_sql).fetch_one(db).await?.get("count");
+    let total: (i64,) = count_builder.build_query_as().fetch_one(db).await?;
 
-    // 分页和排序
     let page_num = params.page_num.unwrap_or(1);
     let page_size = params.page_size.unwrap_or(10);
     let offset = (page_num - 1) * page_size;
-    sql.push_str(&format!(
-        " ORDER BY u.create_time DESC LIMIT {} OFFSET {}",
-        page_size, offset
-    ));
+    query_builder
+        .push(" ORDER BY u.create_time DESC LIMIT ")
+        .push_bind(page_size)
+        .push(" OFFSET ")
+        .push_bind(offset);
 
-    info!("[DB_QUERY] Executing query for user list: {}", sql);
-    // 定义一个临时的结构体来接收 JOIN 查询的结果
+    info!("[DB_QUERY] Executing query for user list...");
+
     #[derive(sqlx::FromRow, Debug)]
     struct UserWithDeptName {
-        // 使用 flatten 将 SysUser 的所有字段都映射过来
         #[sqlx(flatten)]
         user: SysUser,
-        // 单独映射 dept_name 字段
         dept_name: Option<String>,
     }
 
-    // 使用 query_as! 宏执行查询，自动处理 from_row 的调用和错误
-    let results: Vec<UserWithDeptName> = sqlx::query_as(&sql).fetch_all(db).await?;
+    let results: Vec<UserWithDeptName> = query_builder.build_query_as().fetch_all(db).await?;
 
-    // 将查询结果转换为我们最终需要的 UserListVo
     let user_list_vo: Vec<UserListVo> = results
         .into_iter()
         .map(|r| {
             let dept = r.dept_name.map(|name| SysDept {
                 dept_id: r.user.dept_id.unwrap_or(0),
                 dept_name: Some(name),
-                // 其他字段使用默认值，因为列表页不需要
                 ..Default::default()
             });
             UserListVo { user: r.user, dept }
@@ -96,9 +118,8 @@ pub async fn select_user_list(db: &MySqlPool, params: ListUserQuery) -> Result<T
         "[DB_RESULT] Found {} users for the current page.",
         user_list_vo.len()
     );
-    Ok(TableDataInfo::new(user_list_vo, total))
+    Ok(TableDataInfo::new(user_list_vo, total.0))
 }
-
 /// 新增用户，并处理其与角色的关联关系（事务性）
 pub async fn add_user(db: &MySqlPool, vo: AddUserVo) -> Result<u64, AppError> {
     info!("[SERVICE] Entering add_user with vo: {:?}", vo);
@@ -638,36 +659,34 @@ pub async fn export_user_list(db: &MySqlPool, params: ListUserQuery) -> Result<V
         params
     );
 
-    let mut sql = "
-        SELECT u.user_id, u.user_name, u.nick_name, u.email, u.phonenumber, u.sex, u.status, u.login_ip, u.login_date, u.create_time, d.dept_name
-        FROM sys_user u
-        LEFT JOIN sys_dept d ON u.dept_id = d.dept_id
-        WHERE u.del_flag = '0'"
-        .to_string();
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
+        "SELECT u.user_id, u.user_name, u.nick_name, u.email, u.phonenumber, u.sex, u.status, u.login_ip, u.login_date, u.create_time, d.dept_name
+         FROM sys_user u
+         LEFT JOIN sys_dept d ON u.dept_id = d.dept_id
+         WHERE u.del_flag = '0'"
+    );
 
     if let Some(name) = params.user_name {
         if !name.trim().is_empty() {
-            sql.push_str(&format!(" AND u.user_name LIKE '%{}%'", name));
+            query_builder.push(" AND u.user_name LIKE ").push_bind(format!("%{}%", name));
         }
     }
     if let Some(phone) = params.phonenumber {
         if !phone.trim().is_empty() {
-            sql.push_str(&format!(" AND u.phonenumber LIKE '%{}%'", phone));
+            query_builder.push(" AND u.phonenumber LIKE ").push_bind(format!("%{}%", phone));
         }
     }
     if let Some(status) = params.status {
         if !status.trim().is_empty() {
-            sql.push_str(&format!(" AND u.status = '{}'", status));
+            query_builder.push(" AND u.status = ").push_bind(status);
         }
     }
     if let Some(dept_id) = params.dept_id {
-        sql.push_str(&format!(
-            " AND (u.dept_id = {} OR find_in_set({}, d.ancestors))",
-            dept_id, dept_id
-        ));
+        query_builder.push(" AND (u.dept_id = ").push_bind(dept_id)
+            .push(" OR FIND_IN_SET(").push_bind(dept_id).push(", d.ancestors))");
     }
 
-    sql.push_str(" ORDER BY u.create_time DESC");
+    query_builder.push(" ORDER BY u.create_time DESC");
 
     #[derive(sqlx::FromRow, Debug)]
     struct UserExportRow {
@@ -684,7 +703,7 @@ pub async fn export_user_list(db: &MySqlPool, params: ListUserQuery) -> Result<V
         dept_name: Option<String>,
     }
 
-    let users: Vec<UserExportRow> = sqlx::query_as(&sql).fetch_all(db).await?;
+    let users: Vec<UserExportRow> = query_builder.build_query_as().fetch_all(db).await?;
     info!("[DB_RESULT] Fetched {} users for export.", users.len());
 
     let mut workbook = Workbook::new();

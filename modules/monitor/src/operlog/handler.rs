@@ -20,7 +20,6 @@ use ruoyi_macros::require_permission;
 use std::sync::Arc;
 use tracing::info;
 
-use common::auth;
 
 /// 获取操作日志列表 (分页)
 pub async fn list(

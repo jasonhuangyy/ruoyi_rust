@@ -1,33 +1,33 @@
 use super::model::{AddDeptVo, DeptTreeSelectVo, DeptTreeVo, SysDept, UpdateDeptVo};
 use common::error::AppError;
-use sqlx::{MySql, MySqlPool, Transaction};
+use sqlx::{MySql, MySqlPool, QueryBuilder, Transaction};
 use tracing::{info, warn};
 
-//  直接返回扁平列表
-/// 查询部门列表（支持按名称和状态查询），返回扁平列表
 pub async fn select_dept_list(
     db: &MySqlPool,
     dept_name: Option<&str>,
     status: Option<&str>,
-) -> Result<Vec<SysDept>, AppError> { // 1. 返回值类型从 Vec<DeptTreeVo> 改为 Vec<SysDept>
-    let mut query = "SELECT * FROM sys_dept WHERE del_flag = '0'".to_string();
+) -> Result<Vec<SysDept>, AppError> {
+    let mut query_builder: QueryBuilder<MySql> =
+        QueryBuilder::new("SELECT * FROM sys_dept WHERE del_flag = '0'");
+
     if let Some(name) = dept_name {
         if !name.trim().is_empty() {
-            query.push_str(&format!(" AND dept_name LIKE '%{}%'", name));
+            query_builder
+                .push(" AND dept_name LIKE ")
+                .push_bind(format!("%{}%", name));
         }
     }
     if let Some(s) = status {
         if !s.trim().is_empty() {
-            query.push_str(&format!(" AND status = '{}'", s));
+            query_builder.push(" AND status = ").push_bind(s);
         }
     }
-    // 排序对前端 handleTree 很重要
-    query.push_str(" ORDER BY parent_id, order_num");
 
-    // 2. 直接查询数据库，得到扁平的 SysDept 列表
-    let depts: Vec<SysDept> = sqlx::query_as(&query).fetch_all(db).await?;
+    query_builder.push(" ORDER BY parent_id, order_num");
 
-    // 3. 不再调用 build_dept_tree，直接返回原始列表！
+    let depts = query_builder.build_query_as().fetch_all(db).await?;
+
     Ok(depts)
 }
  
