@@ -18,9 +18,9 @@ axum = { version = "0.7.5", features = [
     "query",
     "tracing",
     "multipart",
-     "macros",
+    "macros",
 ] }
-tower-http = { version = "0.5", features = ["fs","trace"] }
+tower-http = { version = "0.5", features = ["fs", "trace"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 serde = { version = "1.0.198", features = ["derive"] }
@@ -30,6 +30,7 @@ config = { version = "0.14", features = ["toml"] }
 
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-appender = "0.2.3"
 moka = { version = "0.12", features = ["future"] }
 sqlx = { version = "0.7.4", features = [
     "chrono",
@@ -40,8 +41,8 @@ sqlx = { version = "0.7.4", features = [
 
 
 argon2 = "0.5"
-jwt-simple = { version = "0.12.9",default-features = false, features = ["pure-rust"] }
-chrono = { version = "0.4.41",features = ["serde"] }
+jwt-simple = { version = "0.12.9", default-features = false, features = ["pure-rust"] }
+chrono = { version = "0.4.41", features = ["serde"] }
 tokio-cron-scheduler = "0.10.1"
 uuid = { version = "1.8.0", features = ["v4"] }
 
