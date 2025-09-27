@@ -1,4 +1,4 @@
-# RuoYi-Rust  高性能 Rust 重构后端
+# RuoYi-Rust  高性能 Rust 重构后端 by 丰盛辉煌
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
@@ -7,8 +7,8 @@
 ---
 有任何需求，请直接在requests中提出，我有时间会慢慢的补充上
 ---
-
-**RuoYi-Rust** 是一个雄心勃勃的项目，旨在通过现代、高性能的 Rust 语言及其强大的生态系统(tokio,axum)，完整重写主流 Java Web 框架 [RuoYi](https://gitee.com/y_project/RuoYi) 的后端服务。我们追求的目标不仅是功能对等，更是在性能、资源占用(目前仅几M的内存占用)、安全性及现代化开发体验上实现全面超越，为Rust生态提供一个可复用的管理系统。。 
+---
+**RuoYi-Rust** 是一个雄心勃勃的项目，旨在通过现代、高性能的 Rust 语言及其强大的生态系统，完整重写主流 Java Web 框架 [RuoYi](https://gitee.com/y_project/RuoYi) 的后端服务。我们追求的目标不仅是功能对等，更是在性能、资源占用(目前仅几M的内存占用)、安全性及现代化开发体验上实现全面超越，为Rust生态提供一个可复用的管理系统。
 
 本项目后端与 [RuoYi-Vue3(rust后台配套微调版)](https://gitee.com/rustdev/ruo-yi-vue3.git) 前端项目配套使用。
 
@@ -19,8 +19,6 @@
 *   🔒 **内存安全**: 借助 Rust 强大的所有权和借用检查机制，从编译层面根除空指针、数据竞争等常见的运行时安全隐患，构建坚如磐石的系统。
 
 *   📦 **极简部署**: 整个后端项目可编译为单个可执行文件(内置缓存系统)，不依赖 JRE、Tomcat、Nginx 等任何外部运行时。部署过程从未如此简单：上传文件，启动，仅此而已。
-
-*   📦 **自服务模式**: 后端项目编译为单个可执行文件，提供http静态服务，把前端项目放在dist目录下，完成http服务。
 
 *   🛠️ **现代化开发体验**:
     *   **编译时 SQL 校验**: 采用 `sqlx` 作为数据库交互层，遵循“数据库 Schema 为唯一真实来源”原则。任何不符合数据库表的 SQL 查询都将在编译时被发现，杜绝大量潜在的数据库运行时错误。
@@ -94,7 +92,11 @@ cd ruoyi-rust
 
 ### 3. 后端配置(重要！重要！重要！)
 
-1.  编辑 `.env` 文件，修改 `DATABASE_URL` 以匹配您的数据库连接信息：
+1.  复制环境配置文件 （如果已有.env则跳过此步骤）：
+    ```bash
+    cp .env_ .env
+    ```
+2.  编辑 `.env` 文件，修改 `DATABASE_URL` 以匹配您的数据库连接信息：
     ```
     DATABASE_URL="mysql://your_user:your_password@127.0.0.1:3306/ry-vue"
     ```
@@ -110,7 +112,7 @@ cd ruoyi-rust
 
 这是 `sqlx` 的关键步骤。它会在编译前连接数据库，验证所有 SQL 查询的正确性，并将元数据保存在 `sqlx-data.json` 文件中。
 
-1.  **生成元数据文件**(*可选步骤，如果mysql已经启动且可正常连接，可以跳过此步*):
+1.  **生成元数据文件**(可选步骤，如果mysql已经启动且可正常连接，可以跳过此步):
     ```bash
     cargo sqlx prepare --workspace
     ```
@@ -124,13 +126,6 @@ cd ruoyi-rust
 
 ### 5. 前端设置
 
-#####    5.1 极速体验方法：*(ruoyi-rust特色)*
-
-​	在此库中已经内置了前端dist目录，ruoyi-rust项目支持自主服务模式，可直接提供http服务，
-
-​	cargo run -p app 成功之后，直接在浏览器中 http://127.0.0.1:8080 访问。
-
-#####    5.2 前端服务分离方法： 
 1.  克隆 [RuoYi-Vue3] 前端项目。
     ```bash
     git clone https://gitee.com/rustdev/ruo-yi-vue3.git
@@ -148,12 +143,6 @@ cd ruoyi-rust
     *   **默认登录账号**: `admin`
     *   **默认密码**: `admin123`
 
-#### 6. 其他事项
-
-​	1. 为方便开发，代码中做了debug 的功能开关，搜索  #[cfg(not(debug_assertions))] 查看
-
-​	
-
 ## 🏗️ 项目结构
 
 本项目采用 Cargo Workspace 进行模块化管理，结构清晰，职责分明。
@@ -167,17 +156,15 @@ cd ruoyi-rust
         -   `monitor`: **系统监控模块**。
     -   `ruoyi-macros`: **过程宏库**。存放自定义的过程宏，如 `#[require_permission(...)]`。
 
-## 🤝 贡献指南
+##🤝 贡献指南
 
 我们热烈欢迎任何形式的贡献！无论是提交 Issue、修复 Bug 还是实现新功能。请参考我们的 [CONTRIBUTING.md](CONTRIBUTING.md) 文件了解详细的贡献流程和编码规范。
 
-## 📄 许可证 (License)
+##📄 许可证 (License)
 
 本项目采用 [MIT License](LICENSE) 开源许可证。
 
-## ruoyi-rust： 交流QQ群: 512670767
-
 ## 🙏 鸣谢
 
-*   感谢原项目 [RuoYi](https://gitee.com/y_project/RuoYi) 提供的优秀设计和前端实现。
+*   感谢原项目 [RuoYi-Vue](https://gitee.com/y_project/RuoYi-Vue) 提供的优秀设计和前端实现。
 *   感谢 [RuoYi-Vue3](https://gitcode.com/yangzongzhuan/RuoYi-Vue3) 提供的 Vue3 前端版本。
