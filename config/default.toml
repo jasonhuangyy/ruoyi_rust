@@ -7,7 +7,7 @@ port = 8080
 
 [database]
 # 请确保将 user:password@host:port/database 替换为您自己的配置
-url = "mysql://root:admin123@127.0.0.1:3306/ry-vue?connect_timeout=8"
+url = "mysql://admin:admin123@127.0.0.1:3306/ry-vue?connect_timeout=8"
 
 
 [jwt]
@@ -18,3 +18,6 @@ secret = "your-super-secret-key-that-is-at-least-32-bytes-long"
 issuer = "ruoyi-rust-app"
 # JWT 过期时间，单位：小时
 expiration_hours = 2
+
+[security]
+captcha_enabled = true # 默认开启验证码

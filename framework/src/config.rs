@@ -17,13 +17,18 @@ pub struct JwtSettings {
     pub issuer: String,
     pub expiration_hours: i64,
 }
- 
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SecurityConfig {
+    pub captcha_enabled: bool,
+}
 
 #[derive(Debug, Deserialize,Clone)]
 pub struct Settings {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
-    pub jwt: JwtSettings, 
+    pub jwt: JwtSettings,
+    pub security: SecurityConfig,
 }
 
 impl Settings {

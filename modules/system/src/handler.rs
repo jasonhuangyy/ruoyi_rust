@@ -69,7 +69,6 @@ async fn record_login_log(db_pool: MySqlPool, user_name: String, ipaddr: String,
         }
     });
 }
- 
 
 #[instrument(skip(state, payload))]
 pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extension<ConnectInfo<SocketAddr>>, Json(payload): Json<LoginRequest>) -> Result<Json<AjaxResult<LoginVo>>, AppError> {
@@ -82,31 +81,32 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
         payload.password,
         payload.code,
         payload.uuid,
-    );  
+    );
     info!(
         "[LOGIN_HANDLER] 收到standard登录请求: user='{}', ip='{}'",
         user_name, ipaddr
     );
 
     // 1.1 验证码校验
-    #[cfg(not(debug_assertions))]
-    match state.captcha_cache.get(&_uuid).await {
-        Some(correct_code) if correct_code.to_lowercase() == _code.to_lowercase() => {
-            state.captcha_cache.invalidate(&_uuid).await;
-        }
-        _ => {
-            record_login_log(
-                state.db_pool.clone(),
-                user_name.clone(),
-                addr.ip().to_string(),
-                "1",
-                "验证码错误或已过期".to_string(),
-            )
-            .await;
-            return Err(AppError::CaptchaError);
+    //#[cfg(not(debug_assertions))]
+    if state.settings.security.captcha_enabled {
+        match state.captcha_cache.get(&_uuid).await {
+            Some(correct_code) if correct_code.to_lowercase() == _code.to_lowercase() => {
+                state.captcha_cache.invalidate(&_uuid).await;
+            }
+            _ => {
+                record_login_log(
+                    state.db_pool.clone(),
+                    user_name.clone(),
+                    addr.ip().to_string(),
+                    "1",
+                    "验证码错误或已过期".to_string(),
+                )
+                .await;
+                return Err(AppError::CaptchaError);
+            }
         }
     }
-
     // 用户名密码校验
     let db_user = match user::service::select_user_by_username(&state.db_pool, &user_name).await? {
         Some(u) => u,
@@ -197,14 +197,21 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
     info!("[LOGIN_HANDLER] 在线用户信息已存入缓存.");
 
     // --- 4. 记录成功日志并返回 ---
-    record_login_log(db_pool, db_user.user_name, ipaddr, "0", "登录成功".to_string()).await;
+    record_login_log(
+        db_pool,
+        db_user.user_name,
+        ipaddr,
+        "0",
+        "登录成功".to_string(),
+    )
+    .await;
 
     let vo = LoginVo { token };
     info!("[LOGIN_HANDLER] 登录流程全部完成，返回 Token.");
     Ok(Json(AjaxResult::success(vo)))
 }
 
-/// 处理获取当前登录用户信息的请求 
+/// 处理获取当前登录用户信息的请求
 // 使用 Extension 提取器，从请求扩展中获取由 auth 中间件注入的 ClaimsData
 pub async fn get_info(State(state): State<Arc<AppState>>, Extension(claims): Extension<ClaimsData>) -> Result<impl IntoResponse, AppError> {
     info!(
@@ -234,7 +241,7 @@ pub async fn get_info(State(state): State<Arc<AppState>>, Extension(claims): Ext
         permissions.len()
     );
 
-    // 4. 封装成前端需要的业务数据 VO (View Object) 
+    // 4. 封装成前端需要的业务数据 VO (View Object)
     let vo = UserInfoVo {
         user: UserDetailVo {
             user_id: user_detail.user_id,
@@ -265,47 +272,53 @@ pub struct CaptchaData {
 /// 处理获取验证码图片的请求
 #[axum::debug_handler]
 pub async fn get_captcha_image(State(state): State<Arc<AppState>>) -> Json<AjaxResult<CaptchaVo>> {
-    // 1. 在所有 .await 调用之前，完成所有与非 `Send` 变量 `captcha` 相关的操作。
-    let captcha_text: String;
-    let captcha_img_base64: String;
+    let captcha_enabled = state.settings.security.captcha_enabled;
 
-    {
-        // 将 `captcha` 的生命周期限制在这个代码块中。
-        // 1. 使用 `captcha` 库生成一个数学验证码
-        let mut captcha = Captcha::new();
-        captcha
-            .add_chars(4) // 验证码长度为4个字符
-            // .apply_filter(Noise::new(0.2)) // 添加噪声干扰
-            // .apply_filter(Wave::new(2.0, 10.0).horizontal()) // 添加水平扭曲
-            // .apply_filter(Wave::new(2.0, 10.0).vertical()) // 添加垂直扭曲
-            .set_color([20, 40, 80])
-            .view(200, 70); // 设置字符颜色
+    let (uuid, img) = if captcha_enabled {
+        // 1. 在所有 .await 调用之前，完成所有与非 `Send` 变量 `captcha` 相关的操作。
 
-        // 立即从 captcha 对象中提取出我们需要的所有数据。  这些数据 (String类型) 都是 `Send` 的。
-        // 2. 从生成的验证码中获取文本和图片数据
-        // `.chars()` 方法会根据配置（add_chars(4)）生成一个包含4个随机字符的 Vec<char>
-        captcha_text = captcha.chars().iter().collect();
-        // `.as_base64()` 方法是在 `Captcha` 对象上调用的，它会使用内部生成的字符来绘制图片。所以这行不需要改。
-        captcha_img_base64 = captcha.as_base64().unwrap(); // 获取图片的 Base64 编码
-    } // 在这里，非 `Send` 的 `captcha` 变量被销毁了。
+        let captcha_text: String;
+        let captcha_img_base64: String;
 
-    // 3. 生成一个唯一的 UUID 作为 key
-    let uuid = Uuid::new_v4().to_string();
+        {
+            // 将 `captcha` 的生命周期限制在这个代码块中。
+            // 1. 使用 `captcha` 库生成一个数学验证码
+            let mut captcha = Captcha::new();
+            captcha
+                .add_chars(4) // 验证码长度为4个字符
+                // .apply_filter(Noise::new(0.2)) // 添加噪声干扰
+                // .apply_filter(Wave::new(2.0, 10.0).horizontal()) // 添加水平扭曲
+                // .apply_filter(Wave::new(2.0, 10.0).vertical()) // 添加垂直扭曲
+                .set_color([20, 40, 80])
+                .view(200, 70); // 设置字符颜色
 
-    // 4. 将 UUID 和验证码答案存入缓存
-    // .insert() 是一个异步方法，需要 .await
-    // 将答案转为小写存储，以便后续不区分大小写比较
-    state
-        .captcha_cache
-        .insert(uuid.clone(), captcha_text.to_lowercase())
-        .await;
+            // 立即从 captcha 对象中提取出我们需要的所有数据。  这些数据 (String类型) 都是 `Send` 的。
+            // 2. 从生成的验证码中获取文本和图片数据
+            // `.chars()` 方法会根据配置（add_chars(4)）生成一个包含4个随机字符的 Vec<char>
+            captcha_text = captcha.chars().iter().collect();
+            // `.as_base64()` 方法是在 `Captcha` 对象上调用的，它会使用内部生成的字符来绘制图片。所以这行不需要改。
+            captcha_img_base64 = captcha.as_base64().unwrap(); // 获取图片的 Base64 编码
+        } // 在这里，非 `Send` 的 `captcha` 变量被销毁了。
 
-    // 封装业务数据
-    let vo = CaptchaVo {
-        uuid,
-        img: captcha_img_base64,
+        // 3. 生成一个唯一的 UUID 作为 key
+        let uuid = Uuid::new_v4().to_string();
+
+        // 4. 将 UUID 和验证码答案存入缓存
+        // .insert() 是一个异步方法，需要 .await
+        // 将答案转为小写存储，以便后续不区分大小写比较
+        state
+            .captcha_cache
+            .insert(uuid.clone(), captcha_text.to_lowercase())
+            .await;
+        (uuid, captcha_img_base64)
+    } else {
+        ("".to_string(), "".to_string())
     };
-
+    let vo = CaptchaVo {
+        captcha_enabled,
+        uuid,
+        img,
+    };
     // 使用统一的成功响应
     Json(AjaxResult::success(vo))
 }

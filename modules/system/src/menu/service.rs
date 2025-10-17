@@ -67,7 +67,7 @@ pub async fn select_menu_list(db: &MySqlPool) -> Result<Vec<SysMenu>, AppError> 
     // 添加 WHERE 子句，只查询目录和菜单，过滤掉按钮。 与 RuoYi 菜单管理页面的行为保持一致。
     let menus = sqlx::query_as!(
         SysMenu,
-        "SELECT * FROM sys_menu WHERE menu_type IN ('M', 'C') ORDER BY parent_id, order_num"
+        "SELECT * FROM sys_menu ORDER BY parent_id, order_num"
     )
     .fetch_all(db)
     .await?;
@@ -76,7 +76,7 @@ pub async fn select_menu_list(db: &MySqlPool) -> Result<Vec<SysMenu>, AppError> 
 }
 
 pub async fn select_menu_list_with_params(db: &MySqlPool, menu_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysMenu>, AppError> {
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_menu WHERE menu_type IN ('M', 'C') ");
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_menu WHERE 1=1 ");
 
     if let Some(name) = menu_name {
         if !name.trim().is_empty() {
@@ -94,9 +94,10 @@ pub async fn select_menu_list_with_params(db: &MySqlPool, menu_name: Option<&str
     query_builder.push(" ORDER BY parent_id, order_num");
 
     let menus = query_builder.build_query_as().fetch_all(db).await?;
-
     Ok(menus)
 }
+
+
 /// 根据菜单ID查询菜单详情
 pub async fn select_menu_by_id(db: &MySqlPool, menu_id: i64) -> Result<SysMenu, AppError> {
     let menu = sqlx::query_as!(SysMenu, "SELECT * FROM sys_menu WHERE menu_id = ?", menu_id)
