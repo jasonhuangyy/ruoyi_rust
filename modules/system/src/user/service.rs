@@ -10,24 +10,24 @@ use chrono::NaiveDateTime;
 use common::error::AppError;
 use common::page::TableDataInfo;
 use rust_xlsxwriter::Workbook;
-use sqlx::{MySql, MySqlPool, QueryBuilder, Transaction};
+use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use tracing::{error, info, instrument};
 use uuid::Uuid;
 
-pub async fn select_user_list(db: &MySqlPool, params: ListUserQuery) -> Result<TableDataInfo<UserListVo>, AppError> {
+pub async fn select_user_list(db: &PgPool, params: ListUserQuery) -> Result<TableDataInfo<UserListVo>, AppError> {
     info!(
         "[SERVICE] Entering select_user_list with params: {:?}",
         params
     );
 
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT u.*, d.dept_name
          FROM sys_user u
          LEFT JOIN sys_dept d ON u.dept_id = d.dept_id
          WHERE u.del_flag = '0'",
     );
 
-    let mut count_builder: QueryBuilder<MySql> = QueryBuilder::new(
+    let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT COUNT(*)
          FROM sys_user u
          LEFT JOIN sys_dept d ON u.dept_id = d.dept_id
@@ -121,7 +121,7 @@ pub async fn select_user_list(db: &MySqlPool, params: ListUserQuery) -> Result<T
     Ok(TableDataInfo::new(user_list_vo, total.0))
 }
 /// 新增用户，并处理其与角色的关联关系（事务性）
-pub async fn add_user(db: &MySqlPool, vo: AddUserVo) -> Result<u64, AppError> {
+pub async fn add_user(db: &PgPool, vo: AddUserVo) -> Result<u64, AppError> {
     info!("[SERVICE] Entering add_user with vo: {:?}", vo);
     let mut tx = db.begin().await?;
 
@@ -167,7 +167,7 @@ pub async fn add_user(db: &MySqlPool, vo: AddUserVo) -> Result<u64, AppError> {
 }
 
 /// 修改用户，并处理其与角色的关联关系（事务性）
-pub async fn update_user(db: &MySqlPool, vo: UpdateUserVo) -> Result<u64, AppError> {
+pub async fn update_user(db: &PgPool, vo: UpdateUserVo) -> Result<u64, AppError> {
     info!("[SERVICE] Entering update_user with vo: {:?}", vo);
     let mut tx = db.begin().await?;
 
@@ -212,7 +212,7 @@ pub async fn update_user(db: &MySqlPool, vo: UpdateUserVo) -> Result<u64, AppErr
 }
 
 /// 根据ID查询用户信息
-pub async fn select_user_by_id(db: &MySqlPool, user_id: i64) -> Result<SysUser, AppError> {
+pub async fn select_user_by_id(db: &PgPool, user_id: i64) -> Result<SysUser, AppError> {
     info!(
         "[SERVICE] Entering select_user_by_id with user_id: {}",
         user_id
@@ -230,7 +230,7 @@ pub async fn select_user_by_id(db: &MySqlPool, user_id: i64) -> Result<SysUser, 
 /// 返回 `Ok(Some(SysUser))` 如果找到用户，
 /// 返回 `Ok(None)` 如果没有找到，
 /// 返回 `Err(AppError)` 如果发生数据库错误。
-pub async fn select_user_by_username(db: &MySqlPool, user_name: &str) -> Result<Option<SysUser>, AppError> {
+pub async fn select_user_by_username(db: &PgPool, user_name: &str) -> Result<Option<SysUser>, AppError> {
     info!(
         "[SERVICE] Entering select_user_by_username with user_name: '{}'",
         user_name
@@ -254,7 +254,7 @@ pub async fn select_user_by_username(db: &MySqlPool, user_name: &str) -> Result<
 }
 
 /// 根据用户ID查询其关联的角色ID列表
-pub async fn select_role_ids_by_user_id(db: &MySqlPool, user_id: i64) -> Result<Vec<i64>, AppError> {
+pub async fn select_role_ids_by_user_id(db: &PgPool, user_id: i64) -> Result<Vec<i64>, AppError> {
     info!(
         "[SERVICE] Entering select_role_ids_by_user_id for user_id: {}",
         user_id
@@ -267,7 +267,7 @@ pub async fn select_role_ids_by_user_id(db: &MySqlPool, user_id: i64) -> Result<
 }
 
 /// 修改用户状态
-pub async fn change_user_status(db: &MySqlPool, vo: ChangeStatusVo) -> Result<u64, AppError> {
+pub async fn change_user_status(db: &PgPool, vo: ChangeStatusVo) -> Result<u64, AppError> {
     info!("[SERVICE] Entering change_user_status with vo: {:?}", vo);
     let result = sqlx::query!(
         "UPDATE sys_user SET status = ? WHERE user_id = ?",
@@ -280,7 +280,7 @@ pub async fn change_user_status(db: &MySqlPool, vo: ChangeStatusVo) -> Result<u6
 }
 
 /// 重置用户密码
-pub async fn reset_user_pwd(db: &MySqlPool, vo: ResetPwdVo) -> Result<u64, AppError> {
+pub async fn reset_user_pwd(db: &PgPool, vo: ResetPwdVo) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering reset_user_pwd for user_id: {}",
         vo.user_id
@@ -301,7 +301,7 @@ pub async fn reset_user_pwd(db: &MySqlPool, vo: ResetPwdVo) -> Result<u64, AppEr
 }
 
 /// 批量删除用户
-pub async fn delete_user_by_ids(db: &MySqlPool, user_ids: &[i64]) -> Result<u64, AppError> {
+pub async fn delete_user_by_ids(db: &PgPool, user_ids: &[i64]) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering delete_user_by_ids with ids: {:?}",
         user_ids
@@ -330,7 +330,7 @@ pub async fn delete_user_by_ids(db: &MySqlPool, user_ids: &[i64]) -> Result<u64,
     Ok(result.rows_affected())
 }
 
-async fn insert_user_role(tx: &mut Transaction<'_, MySql>, user_id: i64, role_ids: &[i64]) -> Result<(), AppError> {
+async fn insert_user_role(tx: &mut Transaction<'_, Postgres>, user_id: i64, role_ids: &[i64]) -> Result<(), AppError> {
     info!(
         "[TX_HELPER] Inserting {} role associations for user_id: {}",
         role_ids.len(),
@@ -357,7 +357,7 @@ async fn insert_user_role(tx: &mut Transaction<'_, MySql>, user_id: i64, role_id
 ///
 /// # Returns
 /// 一个包含角色键字符串的向量 `Vec<String>`
-pub async fn get_user_roles(db: &MySqlPool, user_id: i64) -> Result<Vec<String>, AppError> {
+pub async fn get_user_roles(db: &PgPool, user_id: i64) -> Result<Vec<String>, AppError> {
     info!("[SERVICE] Entering get_user_roles for user_id: {}", user_id);
 
     // RuoYi 的逻辑：如果是管理员(user_id=1)，直接返回 "admin"
@@ -398,7 +398,7 @@ pub async fn get_user_roles(db: &MySqlPool, user_id: i64) -> Result<Vec<String>,
 ///
 /// # Returns
 /// 一个包含权限标识字符串的向量 `Vec<String>`
-pub async fn get_user_permissions(db: &MySqlPool, user_id: i64) -> Result<Vec<String>, AppError> {
+pub async fn get_user_permissions(db: &PgPool, user_id: i64) -> Result<Vec<String>, AppError> {
     info!(
         "[SERVICE] Entering get_user_permissions for user_id: {}",
         user_id
@@ -444,7 +444,7 @@ pub async fn get_user_permissions(db: &MySqlPool, user_id: i64) -> Result<Vec<St
 }
 
 /// 根据用户ID查询其关联的岗位ID列表
-pub async fn select_post_ids_by_user_id(db: &MySqlPool, user_id: i64) -> Result<Vec<i64>, AppError> {
+pub async fn select_post_ids_by_user_id(db: &PgPool, user_id: i64) -> Result<Vec<i64>, AppError> {
     info!(
         "[SERVICE] Entering select_post_ids_by_user_id for user_id: {}",
         user_id
@@ -458,7 +458,7 @@ pub async fn select_post_ids_by_user_id(db: &MySqlPool, user_id: i64) -> Result<
 
 /// 根据用户ID获取角色分配信息 (用于 authRole 页面)
 #[instrument(skip(db))]
-pub async fn get_auth_role(db: &MySqlPool, user_id: i64) -> Result<AuthRoleVo, AppError> {
+pub async fn get_auth_role(db: &PgPool, user_id: i64) -> Result<AuthRoleVo, AppError> {
     info!("[SERVICE] Entering get_auth_role for user_id: {}", user_id);
     let user = select_user_by_id(db, user_id).await?;
     let all_roles: Vec<SysRole> = sqlx::query_as("SELECT * FROM sys_role WHERE status = '0' AND del_flag = '0'")
@@ -473,7 +473,7 @@ pub async fn get_auth_role(db: &MySqlPool, user_id: i64) -> Result<AuthRoleVo, A
 
 /// 更新用户的角色分配 (事务性)
 #[instrument(skip(db, vo))]
-pub async fn update_auth_role(db: &MySqlPool, vo: UpdateAuthRoleVo) -> Result<(), AppError> {
+pub async fn update_auth_role(db: &PgPool, vo: UpdateAuthRoleVo) -> Result<(), AppError> {
     info!(
         "[SERVICE] Entering update_auth_role for user_id: {}",
         vo.user_id
@@ -509,7 +509,7 @@ pub async fn update_auth_role(db: &MySqlPool, vo: UpdateAuthRoleVo) -> Result<()
 }
 
 /// 获取用户个人信息
-pub async fn get_user_profile(db: &MySqlPool, user_id: i64) -> Result<UserProfileVo, AppError> {
+pub async fn get_user_profile(db: &PgPool, user_id: i64) -> Result<UserProfileVo, AppError> {
     info!(
         "[SERVICE] Entering get_user_profile for user_id: {}",
         user_id
@@ -552,7 +552,7 @@ pub async fn get_user_profile(db: &MySqlPool, user_id: i64) -> Result<UserProfil
 
 /// 更新当前登录用户的基本资料
 #[instrument(skip(db, vo))]
-pub async fn update_user_profile(db: &MySqlPool, user_id: i64, vo: UpdateProfileVo) -> Result<u64, AppError> {
+pub async fn update_user_profile(db: &PgPool, user_id: i64, vo: UpdateProfileVo) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering update_user_profile for user_id: {}",
         user_id
@@ -571,7 +571,7 @@ pub async fn update_user_profile(db: &MySqlPool, user_id: i64, vo: UpdateProfile
 }
 
 /// 用户修改个人密码
-pub async fn update_user_pwd(db: &MySqlPool, user_id: i64, vo: UpdatePwdVo) -> Result<u64, AppError> {
+pub async fn update_user_pwd(db: &PgPool, user_id: i64, vo: UpdatePwdVo) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering update_user_pwd for user_id: {}",
         user_id
@@ -617,7 +617,7 @@ pub async fn update_user_pwd(db: &MySqlPool, user_id: i64, vo: UpdatePwdVo) -> R
 
 /// 更新当前登录用户的头像
 #[instrument(skip(db, file_data))]
-pub async fn update_user_avatar(db: &MySqlPool, user_id: i64, file_data: &[u8]) -> Result<String, AppError> {
+pub async fn update_user_avatar(db: &PgPool, user_id: i64, file_data: &[u8]) -> Result<String, AppError> {
     info!(
         "[SERVICE] Entering update_user_avatar for user_id: {}",
         user_id
@@ -653,27 +653,31 @@ pub async fn update_user_avatar(db: &MySqlPool, user_id: i64, file_data: &[u8]) 
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_user_list(db: &MySqlPool, params: ListUserQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_user_list(db: &PgPool, params: ListUserQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting user list export with params: {:?}",
         params
     );
 
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT u.user_id, u.user_name, u.nick_name, u.email, u.phonenumber, u.sex, u.status, u.login_ip, u.login_date, u.create_time, d.dept_name
          FROM sys_user u
          LEFT JOIN sys_dept d ON u.dept_id = d.dept_id
-         WHERE u.del_flag = '0'"
+         WHERE u.del_flag = '0'",
     );
 
     if let Some(name) = params.user_name {
         if !name.trim().is_empty() {
-            query_builder.push(" AND u.user_name LIKE ").push_bind(format!("%{}%", name));
+            query_builder
+                .push(" AND u.user_name LIKE ")
+                .push_bind(format!("%{}%", name));
         }
     }
     if let Some(phone) = params.phonenumber {
         if !phone.trim().is_empty() {
-            query_builder.push(" AND u.phonenumber LIKE ").push_bind(format!("%{}%", phone));
+            query_builder
+                .push(" AND u.phonenumber LIKE ")
+                .push_bind(format!("%{}%", phone));
         }
     }
     if let Some(status) = params.status {
@@ -682,8 +686,12 @@ pub async fn export_user_list(db: &MySqlPool, params: ListUserQuery) -> Result<V
         }
     }
     if let Some(dept_id) = params.dept_id {
-        query_builder.push(" AND (u.dept_id = ").push_bind(dept_id)
-            .push(" OR FIND_IN_SET(").push_bind(dept_id).push(", d.ancestors))");
+        query_builder
+            .push(" AND (u.dept_id = ")
+            .push_bind(dept_id)
+            .push(" OR FIND_IN_SET(")
+            .push_bind(dept_id)
+            .push(", d.ancestors))");
     }
 
     query_builder.push(" ORDER BY u.create_time DESC");

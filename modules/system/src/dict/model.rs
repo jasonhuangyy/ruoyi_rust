@@ -48,8 +48,8 @@ pub struct ListDictTypeQuery {
     pub status: Option<String>,
 
     // 这两个字段现在是可选的，如果前端不传，给一个默认值
-    pub page_num: Option<u64>,
-    pub page_size: Option<u64>,
+    pub page_num: Option<i64>,
+    pub page_size: Option<i64>,
 }
 
 /// 用于接收“新增字典数据”请求的数据体
@@ -92,10 +92,9 @@ pub struct ListDictDataQuery {
     pub dict_label: Option<String>,
     pub status: Option<String>,
 
-    pub page_num: Option<u64>,
-    pub page_size: Option<u64>,
+    pub page_num: Option<i64>,
+    pub page_size: Option<i64>,
 }
-
 
 /// 用于字典类型下拉框选项的视图对象
 /// 只包含前端需要的 id 和 name

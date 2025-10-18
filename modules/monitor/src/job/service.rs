@@ -3,43 +3,49 @@ use crate::job::task_drop_pending_file::cleanup_expired_pending_files;
 use crate::logininfor;
 use common::{error::AppError, page::TableDataInfo};
 use framework::state::AppState;
-use sqlx::{MySqlPool};
+use rust_xlsxwriter::Workbook;
+use sqlx::PgPool;
+use sqlx::Postgres;
+use sqlx::QueryBuilder;
 use std::str::ParseBoolError;
 use std::sync::Arc;
 use tokio_cron_scheduler::Job;
 use tracing::{debug, error, info, instrument, warn};
-use rust_xlsxwriter::{Workbook, };
-use sqlx::{MySql, QueryBuilder};
 
 /// 查询定时任务列表（分页）
-pub async fn select_job_list(
-    db: &MySqlPool,
-    params: ListJobQuery,
-) -> Result<TableDataInfo<SysJob>, AppError> {
+pub async fn select_job_list(db: &PgPool, params: ListJobQuery) -> Result<TableDataInfo<SysJob>, AppError> {
     info!(
         "[SERVICE] Entering job::select_job_list with params: {:?}",
         params
     );
 
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_job WHERE 1=1");
-    let mut count_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT COUNT(*) FROM sys_job WHERE 1=1");
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_job WHERE 1=1");
+    let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) FROM sys_job WHERE 1=1");
 
     if let Some(name) = params.job_name {
         if !name.trim().is_empty() {
             let condition = format!("%{}%", name);
-            query_builder.push(" AND job_name LIKE ").push_bind(condition.clone());
-            count_builder.push(" AND job_name LIKE ").push_bind(condition);
+            query_builder
+                .push(" AND job_name LIKE ")
+                .push_bind(condition.clone());
+            count_builder
+                .push(" AND job_name LIKE ")
+                .push_bind(condition);
         }
     }
     if let Some(group) = params.job_group {
         if !group.trim().is_empty() {
-            query_builder.push(" AND job_group = ").push_bind(group.clone());
+            query_builder
+                .push(" AND job_group = ")
+                .push_bind(group.clone());
             count_builder.push(" AND job_group = ").push_bind(group);
         }
     }
     if let Some(status) = params.status {
         if !status.trim().is_empty() {
-            query_builder.push(" AND status = ").push_bind(status.clone());
+            query_builder
+                .push(" AND status = ")
+                .push_bind(status.clone());
             count_builder.push(" AND status = ").push_bind(status);
         }
     }
@@ -67,7 +73,7 @@ pub async fn select_job_list(
 }
 
 /// 根据ID查询任务详情
-pub async fn select_job_by_id(db: &MySqlPool, job_id: i64) -> Result<SysJob, AppError> {
+pub async fn select_job_by_id(db: &PgPool, job_id: i64) -> Result<SysJob, AppError> {
     info!(
         "[SERVICE] Entering job::select_job_by_id for id: {}",
         job_id
@@ -86,12 +92,20 @@ async fn add_job_to_scheduler(job: &SysJob, state: &Arc<AppState>) -> Result<(),
     );
 
     let cron_expr = job.cron_expression.as_deref().ok_or_else(|| {
-        let msg = format!("任务 '{}' (ID: {}) 缺少Cron表达式", job.job_name.as_deref().unwrap_or("未知"), job.job_id);
+        let msg = format!(
+            "任务 '{}' (ID: {}) 缺少Cron表达式",
+            job.job_name.as_deref().unwrap_or("未知"),
+            job.job_id
+        );
         error!("{}", msg);
         AppError::ValidationFailed(msg)
     })?;
     let invoke_target = job.invoke_target.clone().ok_or_else(|| {
-        let msg = format!("任务 '{}' (ID: {}) 缺少调用目标", job.job_name.as_deref().unwrap_or("未知"), job.job_id);
+        let msg = format!(
+            "任务 '{}' (ID: {}) 缺少调用目标",
+            job.job_name.as_deref().unwrap_or("未知"),
+            job.job_id
+        );
         error!("{}", msg);
         AppError::ValidationFailed(msg)
     })?;
@@ -173,18 +187,27 @@ async fn remove_job_from_scheduler(job_id: i64, state: &Arc<AppState>) -> Result
 /// 新增任务（DB + Scheduler）
 pub async fn add_job(state: Arc<AppState>, vo: AddJobVo) -> Result<(), AppError> {
     info!("[SERVICE] Entering job::add_job with vo: {:?}", vo);
-    let mut tx = state.db_pool.begin().await?;
+    let mut tx = state.db.begin().await?;
 
     let result = sqlx::query!(
-        "INSERT INTO sys_job (job_name, job_group, invoke_target, cron_expression, misfire_policy, concurrent, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())",
-        vo.job_name, vo.job_group, vo.invoke_target, vo.cron_expression, vo.misfire_policy, vo.concurrent, vo.status, vo.remark
-    ).execute(&mut *tx).await?;
+        "INSERT INTO app.sys_job (job_name, job_group, invoke_target, cron_expression, misfire_policy, concurrent, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())",
+        vo.job_name,
+        vo.job_group,
+        vo.invoke_target,
+        vo.cron_expression,
+        vo.misfire_policy,
+        vo.concurrent,
+        vo.status,
+        vo.remark
+    )
+    .execute(&mut *tx)
+    .await?;
 
     let job_id = result.last_insert_id() as i64;
 
     tx.commit().await?;
 
-    let new_job = select_job_by_id(&state.db_pool, job_id).await?;
+    let new_job = select_job_by_id(&state.db, job_id).await?;
 
     if new_job.status.as_deref() == Some("0") {
         add_job_to_scheduler(&new_job, &state).await?;
@@ -204,11 +227,21 @@ pub async fn update_job(state: Arc<AppState>, vo: UpdateJobVo) -> Result<(), App
     remove_job_from_scheduler(vo.job_id, &state).await?;
 
     sqlx::query!(
-        "UPDATE sys_job SET job_name=?, job_group=?, invoke_target=?, cron_expression=?, misfire_policy=?, concurrent=?, status=?, remark=?, update_by='admin', update_time=NOW() WHERE job_id=?",
-        vo.job_name, vo.job_group, vo.invoke_target, vo.cron_expression, vo.misfire_policy, vo.concurrent, vo.status, vo.remark, vo.job_id
-    ).execute(&state.db_pool).await?;
+        "UPDATE app.sys_job SET job_name=?, job_group=?, invoke_target=?, cron_expression=?, misfire_policy=?, concurrent=?, status=?, remark=?, update_by='admin', update_time=NOW() WHERE job_id=?",
+        vo.job_name,
+        vo.job_group,
+        vo.invoke_target,
+        vo.cron_expression,
+        vo.misfire_policy,
+        vo.concurrent,
+        vo.status,
+        vo.remark,
+        vo.job_id
+    )
+    .execute(&state.db)
+    .await?;
 
-    let updated_job = select_job_by_id(&state.db_pool, vo.job_id).await?;
+    let updated_job = select_job_by_id(&state.db, vo.job_id).await?;
 
     if updated_job.status.as_deref() == Some("0") {
         add_job_to_scheduler(&updated_job, &state).await?;
@@ -227,9 +260,9 @@ pub async fn delete_job_by_ids(state: Arc<AppState>, job_ids: &[i64]) -> Result<
         "[SERVICE] Entering job::delete_job_by_ids with ids: {:?}",
         job_ids
     );
-    let mut tx = state.db_pool.begin().await?;
+    let mut tx = state.db.begin().await?;
     let params = job_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!("DELETE FROM sys_job WHERE job_id IN ({})", params);
+    let sql = format!("DELETE FROM app.sys_job WHERE job_id IN ({})", params);
 
     let mut query = sqlx::query(&sql);
     for id in job_ids {
@@ -258,14 +291,14 @@ pub async fn change_job_status(state: Arc<AppState>, vo: ChangeStatusVo) -> Resu
     );
 
     sqlx::query!(
-        "UPDATE sys_job SET status = ? WHERE job_id = ?",
+        "UPDATE app.sys_job SET status = ? WHERE job_id = ?",
         vo.status,
         vo.job_id
     )
-    .execute(&state.db_pool)
+    .execute(&state.db)
     .await?;
 
-    let job = select_job_by_id(&state.db_pool, vo.job_id).await?;
+    let job = select_job_by_id(&state.db, vo.job_id).await?;
 
     if vo.status == "1" {
         remove_job_from_scheduler(vo.job_id, &state).await?;
@@ -279,7 +312,7 @@ pub async fn change_job_status(state: Arc<AppState>, vo: ChangeStatusVo) -> Resu
 /// 立即执行一次任务
 pub async fn run_job_once(state: Arc<AppState>, job_id: i64) -> Result<(), AppError> {
     info!("[SERVICE] Entering job::run_job_once for id: {}", job_id);
-    let job = select_job_by_id(&state.db_pool, job_id).await?;
+    let job = select_job_by_id(&state.db, job_id).await?;
 
     let invoke_target = job.invoke_target.ok_or_else(|| {
         let msg = format!("无法立即执行任务 (ID: {}): 调用目标为空", job_id);
@@ -298,7 +331,7 @@ pub async fn run_job_once(state: Arc<AppState>, job_id: i64) -> Result<(), AppEr
 pub async fn init_scheduler(state: Arc<AppState>) -> Result<(), AppError> {
     info!("[INIT] Initializing job scheduler...");
     let jobs: Vec<SysJob> = sqlx::query_as("SELECT * FROM sys_job WHERE status = '0'")
-        .fetch_all(&state.db_pool)
+        .fetch_all(&state.db)
         .await?;
 
     info!(
@@ -416,7 +449,7 @@ async fn execute_task(state: Arc<AppState>, invoke_target: String) {
             // 状态: 0 (正常)
             "ryTask.cleanPendingFiles" => {
                 info!("--- Task [cleanPendingFiles] started ---");
-                match cleanup_expired_pending_files(&state.db_pool).await {
+                match cleanup_expired_pending_files(&state.db).await {
                     Ok(count) => info!("Successfully cleaned up {} pending files.", count),
                     Err(e) => error!("Failed to clean up pending files: {:?}", e),
                 }
@@ -436,7 +469,7 @@ async fn execute_task(state: Arc<AppState>, invoke_target: String) {
             // 例如，可以创建一个清理日志的任务
             "ryTask.cleanLoginLog" => {
                 info!("--- Task [cleanLoginLog] started ---");
-                match logininfor::service::clean_logininfor(&state.db_pool).await {
+                match logininfor::service::clean_logininfor(&state.db).await {
                     Ok(affected) => info!("Successfully cleaned {} login logs.", affected),
                     Err(e) => error!("Failed to clean login logs: {:?}", e),
                 }
@@ -450,12 +483,12 @@ async fn execute_task(state: Arc<AppState>, invoke_target: String) {
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_job_list(db: &MySqlPool, params: ListJobQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_job_list(db: &PgPool, params: ListJobQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting job list export with params: {:?}",
         params
     );
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_job WHERE 1=1");
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM app.sys_job WHERE 1=1");
 
     if let Some(name) = params.job_name {
         if !name.trim().is_empty() {

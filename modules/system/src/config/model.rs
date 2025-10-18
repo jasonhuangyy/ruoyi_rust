@@ -22,8 +22,8 @@ pub struct SysConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListConfigQuery {
-    pub page_num: Option<u64>,
-    pub page_size: Option<u64>,
+    pub page_num: Option<i64>,
+    pub page_size: Option<i64>,
     pub config_name: Option<String>,
     pub config_key: Option<String>,
     pub config_type: Option<String>,

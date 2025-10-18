@@ -21,3 +21,6 @@ uuid = { version = "1.17.0", features = ["v4"] }
 tokio-cron-scheduler = {workspace = true}
 tokio =  { workspace = true }
 chrono = {workspace = true}
+sea-orm = { workspace = true }
+envy = { workspace = true }
+log = { workspace = true }

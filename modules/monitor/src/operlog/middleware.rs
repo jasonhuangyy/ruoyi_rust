@@ -14,11 +14,7 @@ use tokio;
 use tower::{Layer, Service};
 use tracing::{error, info};
 
-use super::{
-    extractor::LogInfo,
-    model::SysOperLog,
-    service as operlog_service,
-};
+use super::{extractor::LogInfo, model::SysOperLog, service as operlog_service};
 use framework::{jwt::ClaimsData, state::AppState};
 
 /// 一个自定义的层，用于包裹所有受保护的路由，以实现操作日志记录
@@ -67,7 +63,9 @@ where
 
             let oper_url = req.uri().path().to_string();
             let request_method = req.method().to_string();
-            let oper_ip = req.extensions().get::<ConnectInfo<SocketAddr>>()
+            let oper_ip = req
+                .extensions()
+                .get::<ConnectInfo<SocketAddr>>()
                 .map(|ci| ci.ip().to_string())
                 .unwrap_or_default();
 
@@ -77,7 +75,11 @@ where
                 Ok(bytes) => bytes,
                 Err(e) => {
                     error!("[OperLogMiddleware] Failed to read request body: {}", e);
-                    let response = (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read request body: {}", e)).into_response();
+                    let response = (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to read request body: {}", e),
+                    )
+                        .into_response();
                     return Ok(response);
                 }
             };
@@ -94,7 +96,10 @@ where
 
             // 只有当 LogInfo 存在时才记录
             if let (Some(log_info), Some(state)) = (log_info, app_state) {
-                info!("[OPER_LOG_MIDDLEWARE] ✔✔✔ LogInfo FOUND for '{}'. Preparing to record log.", log_info.title);
+                info!(
+                    "[OPER_LOG_MIDDLEWARE] ✔✔✔ LogInfo FOUND for '{}'. Preparing to record log.",
+                    log_info.title
+                );
 
                 // --- 3. 记录日志 ---
                 let cost_time = start_time.elapsed().as_millis() as i64;
@@ -136,7 +141,7 @@ where
 
                 // 使用 tokio::spawn 将数据库写入操作放到后台执行，不阻塞主响应流程
                 tokio::spawn(async move {
-                    if let Err(e) = operlog_service::add_oper_log(&state.db_pool, log).await {
+                    if let Err(e) = operlog_service::add_oper_log(&state.db, log).await {
                         error!("[LOG_TASK] Failed to add operation log: {:?}", e);
                     }
                 });
@@ -144,7 +149,7 @@ where
                 // 将响应体重建并返回
                 let response = Response::from_parts(res_parts, Body::from(res_body_bytes));
                 return Ok(response);
-            }else {
+            } else {
                 info!("[OPER_LOG_MIDDLEWARE] ❌❌❌ LogInfo NOT FOUND. Skipping log recording for this request.");
             }
 

@@ -1,18 +1,13 @@
 use super::model::UploadFileVo;
 use chrono::Local;
 use common::error::AppError;
-use sqlx::MySqlPool;
+use sqlx::PgPool;
 use std::path::Path;
 use tokio::fs;
-use tracing::{error, info, };
+use tracing::{error, info};
 use uuid::Uuid;
 
-pub async fn save_file(
-    db: &MySqlPool,
-    username: &str,
-    original_filename: &str,
-    data: &[u8],
-) -> Result<UploadFileVo, AppError> {
+pub async fn save_file(db: &PgPool, username: &str, original_filename: &str, data: &[u8]) -> Result<UploadFileVo, AppError> {
     // 1. 生成年月目录和用户目录
     let yyyymm = Local::now().format("%Y%m").to_string();
     let user_dir = Path::new("uploads").join(&yyyymm).join(username);
@@ -42,8 +37,12 @@ pub async fn save_file(
     })?;
 
     // 5. 构造数据库记录
-    let stored_path = Path::new(&yyyymm).join(username).join(&new_filename)
-        .to_str().unwrap_or_default().to_string();
+    let stored_path = Path::new(&yyyymm)
+        .join(username)
+        .join(&new_filename)
+        .to_str()
+        .unwrap_or_default()
+        .to_string();
     let stored_path_str = stored_path.replace('\\', "/");
 
     let file_url = format!("/uploads/{}", stored_path_str);
@@ -56,15 +55,20 @@ pub async fn save_file(
         (original_name, stored_path, file_url, file_size, uploader_name, file_status)
         VALUES (?, ?, ?, ?, ?, 'pending')
         "#,
-        original_filename, stored_path, file_url, file_size, username
+        original_filename,
+        stored_path,
+        file_url,
+        file_size,
+        username
     )
-        .execute(db)
-        .await?;
+    .execute(db)
+    .await?;
 
     let new_file_id = result.last_insert_id() as i64;
-    info!("Successfully uploaded file '{}' for user '{}', stored as '{}', file_id: {}", original_filename, username, stored_path, new_file_id);
-
-
+    info!(
+        "Successfully uploaded file '{}' for user '{}', stored as '{}', file_id: {}",
+        original_filename, username, stored_path, new_file_id
+    );
 
     // 7. 返回给前端的VO
     Ok(UploadFileVo {

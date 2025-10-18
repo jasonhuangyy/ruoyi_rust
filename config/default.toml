@@ -7,8 +7,8 @@ port = 8080
 
 [database]
 # 请确保将 user:password@host:port/database 替换为您自己的配置
-url = "mysql://root:admin123@127.0.0.1:3306/ry-vue?connect_timeout=8"
-
+# url = "mysql://root:admin123@127.0.0.1:3306/ry-vue?connect_timeout=8"
+url ="postgres://postgres:postgres@127.0.0.1:5432/ruoyi"
 
 [jwt]
 # 警告：这是一个示例密钥，请在生产环境中务必更换为一个长且随机的字符串！

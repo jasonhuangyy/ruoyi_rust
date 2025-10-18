@@ -1,14 +1,14 @@
-use sqlx::MySqlPool;
+use crate::error::AppError;
+use sqlx::PgPool;
 use strum::{AsRefStr, EnumString};
 use tracing::info;
-use crate::error::AppError;
 
 /// # 系统权限枚举
 ///
 /// 定义了系统中所有可用的API权限点。
 /// - `#[derive(AsRefStr)]`: 这个宏会自动为枚举实现 `AsRef<str>` trait，可以通过 `.as_ref()` 方法获取其字符串表示。
-/// - `#[strum(serialize = "...")]`: 这个属性将每个枚举成员与其在数据库中对应的 
- 
+/// - `#[strum(serialize = "...")]`: 这个属性将每个枚举成员与其在数据库中对应的
+
 #[derive(Debug, Clone, Copy, AsRefStr, EnumString)]
 pub enum Permission {
     // 用户管理
@@ -25,7 +25,7 @@ pub enum Permission {
     #[strum(serialize = "system:user:resetPwd")]
     UserResetPwd,
     #[strum(serialize = "system:user:export")]
-    UserExport,	
+    UserExport,
 
     // 角色管理
     #[strum(serialize = "system:role:list")]
@@ -40,7 +40,7 @@ pub enum Permission {
     RoleRemove,
     #[strum(serialize = "system:role:export")]
     RoleExport,
-	
+
     // 菜单管理
     #[strum(serialize = "system:menu:list")]
     MenuList,
@@ -59,7 +59,7 @@ pub enum Permission {
     DictList,
     #[strum(serialize = "system:dict:export")]
     DictExport,
-	
+
     // 参数配置
     #[strum(serialize = "system:config:list")]
     ConfigList,
@@ -72,7 +72,7 @@ pub enum Permission {
     #[strum(serialize = "system:config:remove")]
     ConfigRemove,
     #[strum(serialize = "system:config:export")]
-    ConfigExport,	
+    ConfigExport,
     // --- 岗位管理 ---
     #[strum(serialize = "system:post:list")]
     PostList,
@@ -95,9 +95,8 @@ pub enum Permission {
     #[strum(serialize = "monitor:job:remove")]
     JobRemove,
     #[strum(serialize = "monitor:job:export")]
-    JobExport,	
+    JobExport,
 }
-
 
 /// 根据用户ID查询其拥有的所有菜单权限标识（perms）
 ///
@@ -107,7 +106,7 @@ pub enum Permission {
 ///
 /// # Returns
 /// 一个包含权限标识字符串的向量 `Vec<String>`
-pub async fn get_user_permissions(db: &MySqlPool, user_id: i64) -> Result<Vec<String>, AppError> {
+pub async fn get_user_permissions(db: &PgPool, user_id: i64) -> Result<Vec<String>, AppError> {
     info!(
         "[SERVICE] Entering get_user_permissions for user_id: {}",
         user_id

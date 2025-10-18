@@ -28,6 +28,6 @@ pub struct ListLogininforQuery {
     pub begin_time: Option<String>,
     #[serde(rename = "params[endTime]")]
     pub end_time: Option<String>,
-    pub page_num: Option<u64>,
-    pub page_size: Option<u64>,
+    pub page_num: Option<i64>,
+    pub page_size: Option<i64>,
 }

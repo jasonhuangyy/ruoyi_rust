@@ -10,8 +10,8 @@ use axum::extract::Multipart;
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::{
     extract::{Form, Path, Query, State},
-    response::IntoResponse, Extension,
-    Json,
+    response::IntoResponse,
+    Extension, Json,
 };
 use common::extractor::DebugJson;
 use common::{auth::Permission, error::AppError, page::TableDataInfo, response::AjaxResult};
@@ -227,9 +227,11 @@ pub async fn update_avatar(State(state): State<Arc<AppState>>, Extension(claims)
     ))
 }
 
-
 #[require_permission("system:user:export")] // RuoYi 原始权限标识
-pub async fn export(State(state): State<Arc<AppState>>,    Extension(_claims): Extension<ClaimsData>,    Form(params): Form<ListUserQuery>, // 复用列表查询的参数结构体
+pub async fn export(
+    State(state): State<Arc<AppState>>,
+    Extension(_claims): Extension<ClaimsData>,
+    Form(params): Form<ListUserQuery>, // 复用列表查询的参数结构体
 ) -> Result<impl IntoResponse, AppError> {
     info!("[HANDLER] Entering user::export with params: {:?}", params);
 

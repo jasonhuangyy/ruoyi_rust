@@ -1,7 +1,7 @@
 //! 岗位管理模块的实体与视图对象
 
-use serde::{Deserialize, Serialize};
 use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
 
 /// 数据库实体 (与 `sys_post` 表完全对应)
 #[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
@@ -23,8 +23,8 @@ pub struct SysPost {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListPostQuery {
-    pub page_num: Option<u64>,
-    pub page_size: Option<u64>,
+    pub page_num: Option<i64>,
+    pub page_size: Option<i64>,
     #[serde(rename = "postCode")]
     pub post_code: Option<String>,
     pub post_name: Option<String>,

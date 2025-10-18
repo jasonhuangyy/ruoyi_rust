@@ -1,15 +1,10 @@
 use super::model::{AddDeptVo, DeptTreeSelectVo, DeptTreeVo, SysDept, UpdateDeptVo};
 use common::error::AppError;
-use sqlx::{MySql, MySqlPool, QueryBuilder, Transaction};
+use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use tracing::{info, warn};
 
-pub async fn select_dept_list(
-    db: &MySqlPool,
-    dept_name: Option<&str>,
-    status: Option<&str>,
-) -> Result<Vec<SysDept>, AppError> {
-    let mut query_builder: QueryBuilder<MySql> =
-        QueryBuilder::new("SELECT * FROM sys_dept WHERE del_flag = '0'");
+pub async fn select_dept_list(db: &PgPool, dept_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysDept>, AppError> {
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_dept WHERE del_flag = '0'");
 
     if let Some(name) = dept_name {
         if !name.trim().is_empty() {
@@ -30,22 +25,17 @@ pub async fn select_dept_list(
 
     Ok(depts)
 }
- 
 
 /// 根据部门ID查询部门详情
-pub async fn select_dept_by_id(db: &MySqlPool, dept_id: i64) -> Result<SysDept, AppError> {
-    let dept = sqlx::query_as!(
-        SysDept,
-        "SELECT * FROM sys_dept WHERE dept_id = ?",
-        dept_id
-    )
+pub async fn select_dept_by_id(db: &PgPool, dept_id: i64) -> Result<SysDept, AppError> {
+    let dept = sqlx::query_as!(SysDept, "SELECT * FROM sys_dept WHERE dept_id = ?", dept_id)
         .fetch_one(db)
         .await?;
     Ok(dept)
 }
 
 /// 新增部门，并维护祖级列表 `ancestors`
-pub async fn add_dept(db: &MySqlPool, dept: AddDeptVo) -> Result<u64, AppError> {
+pub async fn add_dept(db: &PgPool, dept: AddDeptVo) -> Result<u64, AppError> {
     // 核心逻辑：根据 parent_id 查询父部门，以构建 ancestors
     let parent_ancestors = if dept.parent_id != 0 {
         let parent_dept = select_dept_by_id(db, dept.parent_id).await?;
@@ -61,10 +51,17 @@ pub async fn add_dept(db: &MySqlPool, dept: AddDeptVo) -> Result<u64, AppError> 
             INSERT INTO sys_dept (parent_id, ancestors, dept_name, order_num, leader, phone, email, status, create_by, create_time)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())
         "#,
-        dept.parent_id, new_ancestors, dept.dept_name, dept.order_num, dept.leader, dept.phone, dept.email, dept.status
+        dept.parent_id,
+        new_ancestors,
+        dept.dept_name,
+        dept.order_num,
+        dept.leader,
+        dept.phone,
+        dept.email,
+        dept.status
     )
-        .execute(db)
-        .await?;
+    .execute(db)
+    .await?;
 
     Ok(result.rows_affected())
 }
@@ -92,12 +89,18 @@ pub async fn add_dept(db: &MySqlPool, dept: AddDeptVo) -> Result<u64, AppError> 
 //     REPLACE(ancestors, old_path, new_path): 将 ancestors 字段中所有出现的 old_path 字符串替换为 new_path。
 //     WHERE ancestors LIKE 'old_path,%': 这个 WHERE 条件是关键，它确保只对 ancestors 以 old_path, 开头的行进行操作，也就是只更新真正的子孙部门，避免了错误地修改其他不相关的部门。
 //     提交事务: 所有操作成功后，提交事务，使更改永久生效。
-pub async fn update_dept(db: &MySqlPool, dept_vo: UpdateDeptVo) -> Result<u64, AppError> {
-    info!("[SERVICE] Entering dept::update_dept for dept_id: {}", dept_vo.dept_id);
+pub async fn update_dept(db: &PgPool, dept_vo: UpdateDeptVo) -> Result<u64, AppError> {
+    info!(
+        "[SERVICE] Entering dept::update_dept for dept_id: {}",
+        dept_vo.dept_id
+    );
 
     // 开启一个数据库事务
     let mut tx = db.begin().await?;
-    info!("[TX] Transaction started for updating dept_id: {}", dept_vo.dept_id);
+    info!(
+        "[TX] Transaction started for updating dept_id: {}",
+        dept_vo.dept_id
+    );
 
     //  1: 获取要修改的部门的旧数据
     // 我们需要在事务中查询，以防止在操作过程中数据被其他请求修改 (虽然概率很小，但这是最佳实践)
@@ -106,8 +109,8 @@ pub async fn update_dept(db: &MySqlPool, dept_vo: UpdateDeptVo) -> Result<u64, A
         "SELECT * FROM sys_dept WHERE dept_id = ?",
         dept_vo.dept_id
     )
-        .fetch_one(&mut *tx)
-        .await?;
+    .fetch_one(&mut *tx)
+    .await?;
 
     //  2: 计算新的祖级列表 (new_ancestors)
     // 获取新的父部门信息来构建 new_ancestors
@@ -116,8 +119,8 @@ pub async fn update_dept(db: &MySqlPool, dept_vo: UpdateDeptVo) -> Result<u64, A
         "SELECT * FROM sys_dept WHERE dept_id = ?",
         dept_vo.parent_id
     )
-        .fetch_optional(&mut *tx) // 使用 fetch_optional 因为 parent_id=0 时查不到记录
-        .await?;
+    .fetch_optional(&mut *tx) // 使用 fetch_optional 因为 parent_id=0 时查不到记录
+    .await?;
 
     // 如果父部门存在，则构建 ancestors；如果不存在(parent_id=0)，则 ancestors 为 "0"
     let new_ancestors = match parent_dept {
@@ -133,11 +136,22 @@ pub async fn update_dept(db: &MySqlPool, dept_vo: UpdateDeptVo) -> Result<u64, A
             SET parent_id = ?, ancestors = ?, dept_name = ?, order_num = ?, leader = ?, phone = ?, email = ?, status = ?, update_by = 'admin', update_time = NOW()
             WHERE dept_id = ?
         "#,
-        dept_vo.parent_id, new_ancestors, dept_vo.dept_name, dept_vo.order_num, dept_vo.leader, dept_vo.phone, dept_vo.email, dept_vo.status, dept_vo.dept_id
+        dept_vo.parent_id,
+        new_ancestors,
+        dept_vo.dept_name,
+        dept_vo.order_num,
+        dept_vo.leader,
+        dept_vo.phone,
+        dept_vo.email,
+        dept_vo.status,
+        dept_vo.dept_id
     )
-        .execute(&mut *tx)
-        .await?;
-    info!("[TX] Updated current department (id: {}) successfully.", dept_vo.dept_id);
+    .execute(&mut *tx)
+    .await?;
+    info!(
+        "[TX] Updated current department (id: {}) successfully.",
+        dept_vo.dept_id
+    );
 
     //  4: 如果祖级列表发生变化，则递归更新所有子孙部门
     let old_ancestors = old_dept.ancestors.unwrap_or_default();
@@ -149,66 +163,75 @@ pub async fn update_dept(db: &MySqlPool, dept_vo: UpdateDeptVo) -> Result<u64, A
         // 新的完整祖级路径，例如 "0,200,101"
         let new_children_path = format!("{},{}", new_ancestors, old_dept.dept_id);
 
-        info!("[RECURSIVE_UPDATE] Replacing old path '{}' with new path '{}' for all descendants.", old_children_path, new_children_path);
+        info!(
+            "[RECURSIVE_UPDATE] Replacing old path '{}' with new path '{}' for all descendants.",
+            old_children_path, new_children_path
+        );
 
         // 使用 SQL 的 REPLACE 函数批量更新所有子孙节点的 ancestors 字段
         // 条件 `ancestors LIKE 'old_path,%'` 确保我们只更新真正的子孙节点
-        let update_children_result = sqlx::query(
-            "UPDATE sys_dept SET ancestors = REPLACE(ancestors, ?, ?) WHERE ancestors LIKE ?"
-        )
+        let update_children_result = sqlx::query("UPDATE sys_dept SET ancestors = REPLACE(ancestors, ?, ?) WHERE ancestors LIKE ?")
             .bind(&old_children_path)
             .bind(&new_children_path)
             .bind(format!("{},%", old_children_path))
             .execute(&mut *tx)
             .await?;
 
-        info!("[TX] Updated {} descendant departments.", update_children_result.rows_affected());
+        info!(
+            "[TX] Updated {} descendant departments.",
+            update_children_result.rows_affected()
+        );
     } else {
         info!("[RECURSIVE_UPDATE] Ancestors did not change. Skipping children update.");
     }
 
     //  5: 提交事务
     tx.commit().await?;
-    info!("[TX] Transaction committed successfully for dept_id: {}.", dept_vo.dept_id);
+    info!(
+        "[TX] Transaction committed successfully for dept_id: {}.",
+        dept_vo.dept_id
+    );
 
     Ok(result.rows_affected())
 }
- 
 
 /// 删除部门（逻辑删除）
-pub async fn delete_dept_by_id(db: &MySqlPool, dept_id: i64) -> Result<u64, AppError> {
+pub async fn delete_dept_by_id(db: &PgPool, dept_id: i64) -> Result<u64, AppError> {
     // RuoYi 的删除是逻辑删除，更新 del_flag 字段
     let result = sqlx::query!(
         "UPDATE sys_dept SET del_flag = '2' WHERE dept_id = ?",
         dept_id
     )
-        .execute(db)
-        .await?;
+    .execute(db)
+    .await?;
 
     Ok(result.rows_affected())
 }
 
- 
 // `select_dept_list_for_treeselect` 函数保持不变
-pub async fn select_dept_list_for_treeselect(db: &MySqlPool) -> Result<Vec<SysDept>, AppError> {
+pub async fn select_dept_list_for_treeselect(db: &PgPool) -> Result<Vec<SysDept>, AppError> {
     info!("[SERVICE] Entering select_dept_list_for_treeselect");
     let depts = sqlx::query_as!(
         SysDept,
         "SELECT * FROM sys_dept WHERE del_flag = '0' AND status = '0' ORDER BY parent_id, order_num"
     )
-        .fetch_all(db)
-        .await?;
-    info!("[DB_RESULT] Found {} departments for treeselect.", depts.len());
+    .fetch_all(db)
+    .await?;
+    info!(
+        "[DB_RESULT] Found {} departments for treeselect.",
+        depts.len()
+    );
     Ok(depts)
 }
-
-
 
 /// 辅助函数：将部门的扁平列表构建成树形结构 (最终正确稳定版 - 递归法)
 pub fn build_dept_tree(depts: Vec<SysDept>) -> Vec<DeptTreeVo> {
     let mut all_nodes: Vec<DeptTreeVo> = depts
         .into_iter()
-        .map(|dept| DeptTreeVo { dept, children: Vec::new() })
+        .map(|dept| DeptTreeVo {
+            dept,
+            children: Vec::new(),
+        })
         .collect();
 
     let mut roots = Vec::new();
@@ -249,7 +272,6 @@ fn build_children_for_dept(parent: &mut DeptTreeVo, all_nodes: &mut Vec<DeptTree
     parent.children = children;
 }
 
-
 /// 辅助函数：将扁平的 SysDept 列表构建成前端需要的 DeptTreeSelectVo 树形结构
 pub fn build_dept_treeselect(depts: Vec<SysDept>) -> Vec<DeptTreeSelectVo> {
     let dept_tree_vo = build_dept_tree(depts);
@@ -277,11 +299,11 @@ fn convert_dept_tree_to_select_tree(tree_vo: Vec<DeptTreeVo>) -> Vec<DeptTreeSel
 /// # Returns
 ///
 /// 一个不包含 `exclude_dept_id` 及其子孙的扁平部门列表 `Vec<SysDept>`。
-pub async fn select_dept_list_exclude_child(
-    db: &MySqlPool,
-    exclude_dept_id: i64,
-) -> Result<Vec<SysDept>, AppError> {
-    info!("[SERVICE] Entering select_dept_list_exclude_child, excluding children of dept_id: {}", exclude_dept_id);
+pub async fn select_dept_list_exclude_child(db: &PgPool, exclude_dept_id: i64) -> Result<Vec<SysDept>, AppError> {
+    info!(
+        "[SERVICE] Entering select_dept_list_exclude_child, excluding children of dept_id: {}",
+        exclude_dept_id
+    );
 
     // 1. 首先，获取要排除的部门自身的信息，主要是为了它的 `ancestors` 字段
     let exclude_dept = select_dept_by_id(db, exclude_dept_id).await?;
@@ -294,25 +316,26 @@ pub async fn select_dept_list_exclude_child(
     //    (注意这里的逗号，LIKE 'x,y,%' 可以匹配所有 'x,y' 的子孙)
     let sql = format!(
         "SELECT * FROM sys_dept WHERE del_flag = '0' AND dept_id != {} AND ancestors NOT LIKE '{},{}%'",
-        exclude_dept_id,
-        exclude_ancestors,
-        exclude_dept_id
+        exclude_dept_id, exclude_ancestors, exclude_dept_id
     );
 
-    info!("[DB_QUERY] Executing query to exclude child departments: {}", sql);
+    info!(
+        "[DB_QUERY] Executing query to exclude child departments: {}",
+        sql
+    );
 
     // 3. 执行查询并返回结果
     let depts: Vec<SysDept> = sqlx::query_as(&sql).fetch_all(db).await?;
-    info!("[DB_RESULT] Found {} departments after excluding children.", depts.len());
+    info!(
+        "[DB_RESULT] Found {} departments after excluding children.",
+        depts.len()
+    );
 
     Ok(depts)
 }
 
 /// 获取或创建默认部门，并返回其ID。此函数设计为在事务中安全运行。
-pub async fn get_or_create_default_dept(
-    tx: &mut Transaction<'_, MySql>,
-    dept_name: &str,
-) -> Result<i64, AppError> {
+pub async fn get_or_create_default_dept(tx: &mut Transaction<'_, Postgres>, dept_name: &str) -> Result<i64, AppError> {
     // 1. 尝试查找部门
     let existing_dept: Option<SysDept> = sqlx::query_as("SELECT * FROM sys_dept WHERE dept_name = ? AND del_flag = '0' LIMIT 1")
         .bind(dept_name)
@@ -320,11 +343,17 @@ pub async fn get_or_create_default_dept(
         .await?;
 
     if let Some(dept) = existing_dept {
-        info!("[SERVICE_DEPT] Found default department '{}' with id: {}", dept_name, dept.dept_id);
+        info!(
+            "[SERVICE_DEPT] Found default department '{}' with id: {}",
+            dept_name, dept.dept_id
+        );
         Ok(dept.dept_id)
     } else {
         // 2. 如果不存在，则创建
-        warn!("[SERVICE_DEPT] Default department '{}' not found. Creating it...", dept_name);
+        warn!(
+            "[SERVICE_DEPT] Default department '{}' not found. Creating it...",
+            dept_name
+        );
         let result = sqlx::query!(
             r#"
             INSERT INTO sys_dept (parent_id, ancestors, dept_name, order_num, status, create_by, create_time)
@@ -332,11 +361,14 @@ pub async fn get_or_create_default_dept(
             "#,
             dept_name
         )
-            .execute(&mut **tx)
-            .await?;
+        .execute(&mut **tx)
+        .await?;
 
         let new_dept_id = result.last_insert_id() as i64;
-        info!("[SERVICE_DEPT] Created default department '{}' with new id: {}", dept_name, new_dept_id);
+        info!(
+            "[SERVICE_DEPT] Created default department '{}' with new id: {}",
+            dept_name, new_dept_id
+        );
         Ok(new_dept_id)
     }
 }

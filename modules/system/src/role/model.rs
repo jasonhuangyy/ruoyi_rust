@@ -26,7 +26,7 @@ pub struct SysRole {
 
 /// 用于角色列表查询的参数结构体
 /// `Deserialize` 使其能从URL的query string中反序列化
-#[derive(Deserialize, Debug,Default)]
+#[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ListRoleQuery {
     // 业务查询参数
@@ -39,8 +39,8 @@ pub struct ListRoleQuery {
     #[serde(rename = "params[endTime]")]
     pub end_time: Option<String>,
     // 分页参数
-    pub page_num: Option<u64>,
-    pub page_size: Option<u64>,
+    pub page_num: Option<i64>,
+    pub page_size: Option<i64>,
 }
 
 /// 新增角色时接收前端数据的请求体 (DTO)
@@ -77,5 +77,3 @@ pub struct ChangeStatusVo {
     pub role_id: i64,
     pub status: String,
 }
-
- 

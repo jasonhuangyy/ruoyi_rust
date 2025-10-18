@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
 use common::error::AppError;
-use sqlx::{MySqlPool, QueryBuilder};
+use sqlx::{PgPool, QueryBuilder};
 use tracing::{error, info, instrument, warn};
 
 ////////////////////////////////////////////
@@ -9,7 +9,7 @@ use tracing::{error, info, instrument, warn};
 /// 此函数会查找并删除所有状态为 'pending' 且上传时间超过24小时的文件记录及其对应的物理文件。
 /// 这是一个独立的、可被定时任务调用的服务。
 #[instrument(skip(db))]
-pub async fn cleanup_expired_pending_files(db: &MySqlPool) -> Result<u64, AppError> {
+pub async fn cleanup_expired_pending_files(db: &PgPool) -> Result<u64, AppError> {
     info!("[FILE_CLEANUP_SERVICE] Starting cleanup of expired pending files...");
 
     // 计算出24小时前的时间点
@@ -19,9 +19,7 @@ pub async fn cleanup_expired_pending_files(db: &MySqlPool) -> Result<u64, AppErr
     let mut tx = db.begin().await?;
 
     // 查找所有符合条件的待清理文件 (ID 和 存储路径)
-    let files_to_delete: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT file_id, stored_path FROM sys_upload_files WHERE file_status = 'pending' AND upload_time < ?"
-    )
+    let files_to_delete: Vec<(i64, String)> = sqlx::query_as("SELECT file_id, stored_path FROM sys_upload_files WHERE file_status = 'pending' AND upload_time < ?")
         .bind(expiration_time)
         .fetch_all(&mut *tx) // 在事务中查询
         .await?;
@@ -33,17 +31,27 @@ pub async fn cleanup_expired_pending_files(db: &MySqlPool) -> Result<u64, AppErr
     }
 
     let file_ids: Vec<i64> = files_to_delete.iter().map(|(id, _)| *id).collect();
-    info!("[FILE_CLEANUP_SERVICE] Found {} files to clean up. File IDs: {:?}", files_to_delete.len(), file_ids);
+    info!(
+        "[FILE_CLEANUP_SERVICE] Found {} files to clean up. File IDs: {:?}",
+        files_to_delete.len(),
+        file_ids
+    );
 
     // 删除物理文件
     for (file_id, stored_path) in &files_to_delete {
         let physical_path = std::path::Path::new("uploads").join(stored_path);
         if let Err(e) = tokio::fs::remove_file(&physical_path).await {
             if e.kind() == std::io::ErrorKind::NotFound {
-                warn!("[FILE_CLEANUP_SERVICE] Physical file not found for pending file_id: {}, path: {:?}. It may have been manually deleted. Proceeding to delete DB record.", file_id, physical_path);
+                warn!(
+                    "[FILE_CLEANUP_SERVICE] Physical file not found for pending file_id: {}, path: {:?}. It may have been manually deleted. Proceeding to delete DB record.",
+                    file_id, physical_path
+                );
             } else {
-                error!("[FILE_CLEANUP_SERVICE] Failed to delete physical file for pending file_id: {}: {}. Rolling back transaction.", file_id, e);
-                let errmsg = AppError::ValidationFailed(format!("文件删除出错,{}",e.to_string()));
+                error!(
+                    "[FILE_CLEANUP_SERVICE] Failed to delete physical file for pending file_id: {}: {}. Rolling back transaction.",
+                    file_id, e
+                );
+                let errmsg = AppError::ValidationFailed(format!("文件删除出错,{}", e.to_string()));
                 tx.rollback().await?;
                 return Err(errmsg);
             }
@@ -59,7 +67,10 @@ pub async fn cleanup_expired_pending_files(db: &MySqlPool) -> Result<u64, AppErr
     separated.push_unseparated(")");
 
     let result = delete_query.build().execute(&mut *tx).await?;
-    info!("[FILE_CLEANUP_SERVICE] Deleted {} records from sys_upload_files.", result.rows_affected());
+    info!(
+        "[FILE_CLEANUP_SERVICE] Deleted {} records from sys_upload_files.",
+        result.rows_affected()
+    );
 
     // 提交事务
     tx.commit().await?;

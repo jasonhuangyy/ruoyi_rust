@@ -2,7 +2,7 @@ use super::model::{ListOperLogQuery, SysOperLog};
 use common::error::AppError;
 use common::page::TableDataInfo;
 use rust_xlsxwriter::Workbook;
-use sqlx::{MySql, MySqlPool, QueryBuilder};
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use tracing::{info, instrument};
 
 /// 新增一条操作日志记录
@@ -10,7 +10,7 @@ use tracing::{info, instrument};
 /// # 异步说明
 /// 这个函数将被设计为在后台任务中调用 (`tokio::spawn`)，
 /// 以避免阻塞主请求的响应。
-pub async fn add_oper_log(db: &MySqlPool, log: SysOperLog) -> Result<(), AppError> {
+pub async fn add_oper_log(db: &PgPool, log: SysOperLog) -> Result<(), AppError> {
     info!("[SERVICE] Preparing to add operation log: {:?}", log.title);
 
     // --- 数据库插入逻辑将在这里实现 ---
@@ -44,19 +44,14 @@ pub async fn add_oper_log(db: &MySqlPool, log: SysOperLog) -> Result<(), AppErro
 }
 
 /// 查询操作日志列表（分页）
-pub async fn select_oper_log_list(
-    db: &MySqlPool,
-    params: ListOperLogQuery,
-) -> Result<TableDataInfo<SysOperLog>, AppError> {
+pub async fn select_oper_log_list(db: &PgPool, params: ListOperLogQuery) -> Result<TableDataInfo<SysOperLog>, AppError> {
     info!(
         "[SERVICE] Entering select_oper_log_list with params: {:?}",
         params
     );
 
-    let mut query_builder: QueryBuilder<MySql> =
-        QueryBuilder::new("SELECT * FROM sys_oper_log WHERE 1=1");
-    let mut count_builder: QueryBuilder<MySql> =
-        QueryBuilder::new("SELECT COUNT(*) FROM sys_oper_log WHERE 1=1");
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_oper_log WHERE 1=1");
+    let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) FROM sys_oper_log WHERE 1=1");
 
     // 由于闭包捕获的生命周期问题，将查询条件直接构建
     // 构建查询条件 for query_builder
@@ -162,7 +157,7 @@ pub async fn select_oper_log_list(
 }
 
 /// 批量删除操作日志
-pub async fn delete_oper_log_by_ids(db: &MySqlPool, oper_ids: &[i64]) -> Result<u64, AppError> {
+pub async fn delete_oper_log_by_ids(db: &PgPool, oper_ids: &[i64]) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering delete_oper_log_by_ids with ids: {:?}",
         oper_ids
@@ -181,7 +176,7 @@ pub async fn delete_oper_log_by_ids(db: &MySqlPool, oper_ids: &[i64]) -> Result<
 }
 
 /// 清空所有操作日志
-pub async fn clean_oper_log(db: &MySqlPool) -> Result<u64, AppError> {
+pub async fn clean_oper_log(db: &PgPool) -> Result<u64, AppError> {
     info!("[SERVICE] Entering clean_oper_log");
     let result = sqlx::query("TRUNCATE TABLE sys_oper_log")
         .execute(db)
@@ -191,13 +186,13 @@ pub async fn clean_oper_log(db: &MySqlPool) -> Result<u64, AppError> {
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_oper_log_list(db: &MySqlPool, params: ListOperLogQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_oper_log_list(db: &PgPool, params: ListOperLogQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting oper log list export with params: {:?}",
         params
     );
 
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_oper_log WHERE 1=1");
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_oper_log WHERE 1=1");
 
     if let Some(title) = params.title {
         if !title.trim().is_empty() {

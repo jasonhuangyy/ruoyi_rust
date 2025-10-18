@@ -2,11 +2,11 @@ use super::model::{ListLogininforQuery, SysLogininfor};
 use common::error::AppError;
 use common::page::TableDataInfo;
 use rust_xlsxwriter::Workbook;
-use sqlx::{MySql, MySqlPool, QueryBuilder};
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use tracing::{info, instrument};
 
 /// 新增一条登录日志记录
-pub async fn add_logininfor(db: &MySqlPool, log: SysLogininfor) -> Result<(), AppError> {
+pub async fn add_logininfor(db: &PgPool, log: SysLogininfor) -> Result<(), AppError> {
     info!(
         "[SERVICE] Preparing to add login information log for user: {:?}",
         log.user_name
@@ -31,14 +31,14 @@ pub async fn add_logininfor(db: &MySqlPool, log: SysLogininfor) -> Result<(), Ap
 }
 
 /// 查询登录日志列表（分页）
-pub async fn select_logininfor_list(db: &MySqlPool, params: ListLogininforQuery) -> Result<TableDataInfo<SysLogininfor>, AppError> {
+pub async fn select_logininfor_list(db: &PgPool, params: ListLogininforQuery) -> Result<TableDataInfo<SysLogininfor>, AppError> {
     info!(
         "[SERVICE] Entering select_logininfor_list with params: {:?}",
         params
     );
 
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_logininfor WHERE 1=1");
-    let mut count_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT COUNT(*) FROM sys_logininfor WHERE 1=1");
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_logininfor WHERE 1=1");
+    let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) FROM sys_logininfor WHERE 1=1");
 
     if let Some(ipaddr) = params.ipaddr {
         if !ipaddr.trim().is_empty() {
@@ -115,7 +115,7 @@ pub async fn select_logininfor_list(db: &MySqlPool, params: ListLogininforQuery)
     Ok(TableDataInfo::new(rows, total.0))
 }
 /// 批量删除登录日志
-pub async fn delete_logininfor_by_ids(db: &MySqlPool, info_ids: &[i64]) -> Result<u64, AppError> {
+pub async fn delete_logininfor_by_ids(db: &PgPool, info_ids: &[i64]) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering delete_logininfor_by_ids with ids: {:?}",
         info_ids
@@ -137,7 +137,7 @@ pub async fn delete_logininfor_by_ids(db: &MySqlPool, info_ids: &[i64]) -> Resul
 }
 
 /// 清空所有登录日志
-pub async fn clean_logininfor(db: &MySqlPool) -> Result<u64, AppError> {
+pub async fn clean_logininfor(db: &PgPool) -> Result<u64, AppError> {
     info!("[SERVICE] Entering clean_logininfor");
     let result = sqlx::query("TRUNCATE TABLE sys_logininfor")
         .execute(db)
@@ -147,13 +147,13 @@ pub async fn clean_logininfor(db: &MySqlPool) -> Result<u64, AppError> {
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_logininfor_list(db: &MySqlPool, params: ListLogininforQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_logininfor_list(db: &PgPool, params: ListLogininforQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting logininfor list export with params: {:?}",
         params
     );
- 
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_logininfor WHERE 1=1");
+
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_logininfor WHERE 1=1");
 
     if let Some(ipaddr) = params.ipaddr {
         if !ipaddr.trim().is_empty() {

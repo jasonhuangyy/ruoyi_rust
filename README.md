@@ -2,13 +2,13 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md) 
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 ---
 有任何需求，请直接在requests中提出，我有时间会慢慢的补充上
 ---
 
-**RuoYi-Rust** 是一个雄心勃勃的项目，旨在通过现代、高性能的 Rust 语言及其强大的生态系统(tokio,axum)，完整重写主流 Java Web 框架 [RuoYi](https://gitee.com/y_project/RuoYi) 的后端服务。我们追求的目标不仅是功能对等，更是在性能、资源占用(目前仅几M的内存占用)、安全性及现代化开发体验上实现全面超越，为Rust生态提供一个可复用的管理系统。。 
+**RuoYi-Rust** 是一个雄心勃勃的项目，旨在通过现代、高性能的 Rust 语言及其强大的生态系统(tokio,axum)，完整重写主流 Java Web 框架 [RuoYi](https://gitee.com/y_project/RuoYi) 的后端服务。我们追求的目标不仅是功能对等，更是在性能、资源占用(目前仅几M的内存占用)、安全性及现代化开发体验上实现全面超越，为Rust生态提供一个可复用的管理系统。。
 
 本项目后端与 [RuoYi-Vue3(rust后台配套微调版)](https://gitee.com/rustdev/ruo-yi-vue3.git) 前端项目配套使用。
 
@@ -43,7 +43,7 @@
     -   [x] 菜单管理
     -   [x] 部门管理
     -   [x] 字典管理
-    -   [x] 参数管理 
+    -   [x] 参数管理
 -   [x] **权限体系**
     -   [x] 声明式权限校验过程宏 (`ruoyi-macros`)
 -   [ ] **待办核心模块**
@@ -74,7 +74,7 @@
 
 请确保您的开发环境中已安装以下软件：
 *   **Rust**: `1.88` 或更高版本 (通过 `rustup` 安装)
-*   **MySQL**: `5.7` 或更高版本
+*   **Postgres**: `5.7` 或更高版本
 *   **`sqlx-cli`**: (用于编译时 SQL 检查)
     ```bash
     cargo install sqlx-cli
@@ -89,19 +89,19 @@ cd ruoyi-rust
 
 ### 2. 数据库设置
 
-1.  在您的 MySQL 实例中创建一个新的数据库，例如 `ry-vue`。
+1.  在您的 Postgres 实例中创建一个新的数据库，例如 `ry-vue`。
 2.  将项目根目录下的 `sql/ry_20250808.sql` 文件导入到您刚创建的数据库中。
 
 ### 3. 后端配置(重要！重要！重要！)
 
 1.  编辑 `.env` 文件，修改 `DATABASE_URL` 以匹配您的数据库连接信息：
     ```
-    DATABASE_URL="mysql://your_user:your_password@127.0.0.1:3306/ry-vue"
+    DATABASE_URL="Postgres://your_user:your_password@127.0.0.1:3306/ry-vue"
     ```
 
 3.  编辑 `config/default.toml` 文件，修改 `url` 以匹配您的数据库连接信息：
     ```
-    url = "mysql://your_user:your_password@127.0.0.1:3306/ry-vue?connect_timeout=8"
+    url = "Postgres://your_user:your_password@127.0.0.1:3306/ry-vue?connect_timeout=8"
     ```
 
 
@@ -110,7 +110,7 @@ cd ruoyi-rust
 
 这是 `sqlx` 的关键步骤。它会在编译前连接数据库，验证所有 SQL 查询的正确性，并将元数据保存在 `sqlx-data.json` 文件中。
 
-1.  **生成元数据文件**(*可选步骤，如果mysql已经启动且可正常连接，可以跳过此步*):
+1.  **生成元数据文件**(*可选步骤，如果Postgres已经启动且可正常连接，可以跳过此步*):
     ```bash
     cargo sqlx prepare --workspace
     ```
@@ -130,7 +130,7 @@ cd ruoyi-rust
 
 ​	cargo run -p app 成功之后，直接在浏览器中 http://127.0.0.1:8080 访问。
 
-#####    5.2 前端服务分离方法： 
+#####    5.2 前端服务分离方法：
 1.  克隆 [RuoYi-Vue3] 前端项目。
     ```bash
     git clone https://gitee.com/rustdev/ruo-yi-vue3.git
@@ -152,7 +152,7 @@ cd ruoyi-rust
 
 ​	1. 为方便开发，代码中做了debug 的功能开关，搜索  #[cfg(not(debug_assertions))] 查看
 
-​	
+​
 
 ## 🏗️ 项目结构
 

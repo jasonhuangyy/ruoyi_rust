@@ -2,15 +2,15 @@ use common::models::dict_model::SysDictData;
 use common::{constants::cache_keys, error::AppError, page::TableDataInfo};
 use moka::future::Cache;
 use rust_xlsxwriter::Workbook;
-use sqlx::{MySql, MySqlPool, QueryBuilder, Row};
+use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 use tracing::{info, instrument};
 
 use super::model::{AddDictDataVo, AddDictTypeVo, DictTypeOptionVo, ListDictDataQuery, ListDictTypeQuery, SysDictType, UpdateDictDataVo, UpdateDictTypeVo};
 
 /// 查询字典类型列表（分页）
-pub async fn select_dict_type_list(db: &MySqlPool, params: ListDictTypeQuery) -> Result<TableDataInfo<SysDictType>, AppError> {
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_dict_type WHERE 1=1");
-    let mut count_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT COUNT(*) as count FROM sys_dict_type WHERE 1=1");
+pub async fn select_dict_type_list(db: &PgPool, params: ListDictTypeQuery) -> Result<TableDataInfo<SysDictType>, AppError> {
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_dict_type WHERE 1=1");
+    let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) as count FROM sys_dict_type WHERE 1=1");
 
     if let Some(name) = params.dict_name {
         if !name.trim().is_empty() {
@@ -57,7 +57,7 @@ pub async fn select_dict_type_list(db: &MySqlPool, params: ListDictTypeQuery) ->
 }
 
 /// 根据ID查询字典类型详情
-pub async fn select_dict_type_by_id(db: &MySqlPool, dict_id: i64) -> Result<SysDictType, AppError> {
+pub async fn select_dict_type_by_id(db: &PgPool, dict_id: i64) -> Result<SysDictType, AppError> {
     let dict_type = sqlx::query_as!(
         SysDictType,
         "SELECT * FROM sys_dict_type WHERE dict_id = ?",
@@ -69,7 +69,7 @@ pub async fn select_dict_type_by_id(db: &MySqlPool, dict_id: i64) -> Result<SysD
 }
 
 /// 新增字典类型
-pub async fn add_dict_type(db: &MySqlPool, vo: AddDictTypeVo) -> Result<u64, AppError> {
+pub async fn add_dict_type(db: &PgPool, vo: AddDictTypeVo) -> Result<u64, AppError> {
     let result = sqlx::query!(
         "INSERT INTO sys_dict_type (dict_name, dict_type, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, 'admin', NOW())",
         vo.dict_name,
@@ -83,7 +83,7 @@ pub async fn add_dict_type(db: &MySqlPool, vo: AddDictTypeVo) -> Result<u64, App
 }
 
 /// 修改字典类型
-pub async fn update_dict_type(db: &MySqlPool, vo: UpdateDictTypeVo, cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
+pub async fn update_dict_type(db: &PgPool, vo: UpdateDictTypeVo, cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
     // 如果字典类型字符串（dict_type）被修改，需要删除旧的缓存
     // 1. 先查询旧的数据
     let old_dict_type = select_dict_type_by_id(db, vo.dict_id).await?;
@@ -113,7 +113,7 @@ pub async fn update_dict_type(db: &MySqlPool, vo: UpdateDictTypeVo, cache: &Cach
 }
 
 /// 删除字典类型
-pub async fn delete_dict_type_by_ids(db: &MySqlPool, ids: Vec<i64>) -> Result<u64, AppError> {
+pub async fn delete_dict_type_by_ids(db: &PgPool, ids: Vec<i64>) -> Result<u64, AppError> {
     // RuoYi 的实现会检查是否有关联的字典数据，这里简化为直接删除
     let query_str = format!(
         "DELETE FROM sys_dict_type WHERE dict_id IN ({})",
@@ -127,7 +127,7 @@ pub async fn delete_dict_type_by_ids(db: &MySqlPool, ids: Vec<i64>) -> Result<u6
 }
 
 /// 获取所有字典类型作为下拉框选项
-pub async fn get_dict_type_option_select(db: &MySqlPool) -> Result<Vec<DictTypeOptionVo>, AppError> {
+pub async fn get_dict_type_option_select(db: &PgPool) -> Result<Vec<DictTypeOptionVo>, AppError> {
     // 目标结构体是 DictTypeOptionVo，所以 SQL 语句现在是合法的
     let list = sqlx::query_as!(
         DictTypeOptionVo,
@@ -139,9 +139,9 @@ pub async fn get_dict_type_option_select(db: &MySqlPool) -> Result<Vec<DictTypeO
 }
 
 /// 查询字典数据列表（分页）
-pub async fn select_dict_data_list(db: &MySqlPool, params: ListDictDataQuery) -> Result<TableDataInfo<SysDictData>, AppError> {
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_dict_data WHERE 1=1 ");
-    let mut count_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT COUNT(*) FROM sys_dict_data WHERE 1=1 ");
+pub async fn select_dict_data_list(db: &PgPool, params: ListDictDataQuery) -> Result<TableDataInfo<SysDictData>, AppError> {
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_dict_data WHERE 1=1 ");
+    let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) FROM sys_dict_data WHERE 1=1 ");
     query_builder
         .push(" AND dict_type = ")
         .push_bind(params.dict_type.clone());
@@ -180,7 +180,7 @@ pub async fn select_dict_data_list(db: &MySqlPool, params: ListDictDataQuery) ->
 }
 
 /// 根据ID查询字典数据详情
-pub async fn select_dict_data_by_code(db: &MySqlPool, dict_code: i64) -> Result<SysDictData, AppError> {
+pub async fn select_dict_data_by_code(db: &PgPool, dict_code: i64) -> Result<SysDictData, AppError> {
     let data = sqlx::query_as!(
         SysDictData,
         "SELECT * FROM sys_dict_data WHERE dict_code = ?",
@@ -192,7 +192,7 @@ pub async fn select_dict_data_by_code(db: &MySqlPool, dict_code: i64) -> Result<
 }
 
 /// 新增字典数据
-pub async fn add_dict_data(db: &MySqlPool, vo: AddDictDataVo, cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
+pub async fn add_dict_data(db: &PgPool, vo: AddDictDataVo, cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
     let result = sqlx::query!(
         "INSERT INTO sys_dict_data (dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())",
         vo.dict_sort,
@@ -218,7 +218,7 @@ pub async fn add_dict_data(db: &MySqlPool, vo: AddDictDataVo, cache: &Cache<Stri
 }
 
 /// 修改字典数据
-pub async fn update_dict_data(db: &MySqlPool, vo: UpdateDictDataVo, cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
+pub async fn update_dict_data(db: &PgPool, vo: UpdateDictDataVo, cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
     let result = sqlx::query!(
         "UPDATE sys_dict_data SET dict_sort = ?, dict_label = ?, dict_value = ?, dict_type = ?, css_class = ?, list_class = ?, is_default = ?, status = ?, remark = ?, update_by = 'admin', update_time = NOW() WHERE dict_code = ?",
         vo.dict_sort,
@@ -245,7 +245,7 @@ pub async fn update_dict_data(db: &MySqlPool, vo: UpdateDictDataVo, cache: &Cach
 }
 
 /// 删除字典数据
-pub async fn delete_dict_data_by_codes(db: &MySqlPool, codes: Vec<i64>, _cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
+pub async fn delete_dict_data_by_codes(db: &PgPool, codes: Vec<i64>, _cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
     // 为了使缓存失效，需要知道被删除的数据的 dict_type
     // 实际项目中，这里可以先查询一次，或者让前端把 dict_type 传来。为简化，假设批量删除的都是同一种类型。
     // 这里先不处理缓存失效，因为不知道 dict_type。
@@ -263,7 +263,8 @@ pub async fn delete_dict_data_by_codes(db: &MySqlPool, codes: Vec<i64>, _cache: 
 
 /// 根据字典类型查询字典数据列表（核心缓存接口）
 pub async fn select_dict_data_by_type(
-    db: &MySqlPool,    cache: &Cache<String, Vec<SysDictData>>, // 传入缓存实例
+    db: &PgPool,
+    cache: &Cache<String, Vec<SysDictData>>, // 传入缓存实例
     dict_type: &str,
 ) -> Result<Vec<SysDictData>, AppError> {
     let cache_key = format!("{}{}", cache_keys::SYS_DICT_KEY, dict_type);
@@ -300,7 +301,7 @@ pub async fn select_dict_data_by_type(
 }
 
 /// 刷新所有字典缓存
-pub async fn refresh_dict_cache(db: &MySqlPool, cache: &Cache<String, Vec<SysDictData>>) -> Result<(), AppError> {
+pub async fn refresh_dict_cache(db: &PgPool, cache: &Cache<String, Vec<SysDictData>>) -> Result<(), AppError> {
     // 1. 先清空所有字典缓存
     cache.invalidate_all();
     println!("[DEBUG] All dict cache invalidated.");
@@ -329,13 +330,13 @@ pub async fn refresh_dict_cache(db: &MySqlPool, cache: &Cache<String, Vec<SysDic
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_dict_type_list(db: &MySqlPool, params: ListDictTypeQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_dict_type_list(db: &PgPool, params: ListDictTypeQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting dict type list export with params: {:?}",
         params
     );
 
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_dict_type WHERE 1=1");
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_dict_type WHERE 1=1");
 
     if let Some(name) = params.dict_name {
         if !name.trim().is_empty() {

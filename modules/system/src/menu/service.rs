@@ -1,9 +1,9 @@
 use super::model::{AddMenuVo, MenuTreeSelectVo, MenuTreeVo, SysMenu, UpdateMenuVo};
 use common::error::AppError;
-use sqlx::{MySql, MySqlPool, QueryBuilder};
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use tracing::info;
 
-pub async fn select_menu_tree_by_user_id(db: &MySqlPool, user_id: i64) -> Result<Vec<MenuTreeVo>, AppError> {
+pub async fn select_menu_tree_by_user_id(db: &PgPool, user_id: i64) -> Result<Vec<MenuTreeVo>, AppError> {
     info!(
         "[SERVICE] Entering select_menu_tree_by_user_id for user_id: {}",
         user_id
@@ -18,9 +18,9 @@ pub async fn select_menu_tree_by_user_id(db: &MySqlPool, user_id: i64) -> Result
         // 【修复】将 SQL 字符串字面量直接放入宏中
         menus = sqlx::query_as!(
             SysMenu,
-            "SELECT 
-                menu_id, menu_name, parent_id, order_num, path, component, query, 
-                route_name, is_frame, is_cache, menu_type, visible, status, 
+            "SELECT
+                menu_id, menu_name, parent_id, order_num, path, component, query,
+                route_name, is_frame, is_cache, menu_type, visible, status,
                 perms, icon, create_by, create_time, update_by, update_time, remark
             FROM sys_menu
             WHERE menu_type IN ('M', 'C') AND status = '0'
@@ -36,7 +36,7 @@ pub async fn select_menu_tree_by_user_id(db: &MySqlPool, user_id: i64) -> Result
             SysMenu,
             "SELECT DISTINCT
                 m.menu_id, m.menu_name, m.parent_id, m.order_num, m.path, m.component, m.query,
-                m.route_name, m.is_frame, m.is_cache, m.menu_type, m.visible, m.status, 
+                m.route_name, m.is_frame, m.is_cache, m.menu_type, m.visible, m.status,
                 m.perms, m.icon, m.create_by, m.create_time, m.update_by, m.update_time, m.remark
             FROM sys_menu m
             LEFT JOIN sys_role_menu rm ON m.menu_id = rm.menu_id
@@ -63,7 +63,7 @@ pub async fn select_menu_tree_by_user_id(db: &MySqlPool, user_id: i64) -> Result
     Ok(menu_tree)
 }
 
-pub async fn select_menu_list(db: &MySqlPool) -> Result<Vec<SysMenu>, AppError> {
+pub async fn select_menu_list(db: &PgPool) -> Result<Vec<SysMenu>, AppError> {
     // 添加 WHERE 子句，只查询目录和菜单，过滤掉按钮。 与 RuoYi 菜单管理页面的行为保持一致。
     let menus = sqlx::query_as!(
         SysMenu,
@@ -75,8 +75,8 @@ pub async fn select_menu_list(db: &MySqlPool) -> Result<Vec<SysMenu>, AppError> 
     Ok(menus)
 }
 
-pub async fn select_menu_list_with_params(db: &MySqlPool, menu_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysMenu>, AppError> {
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_menu WHERE menu_type IN ('M', 'C') ");
+pub async fn select_menu_list_with_params(db: &PgPool, menu_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysMenu>, AppError> {
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_menu WHERE menu_type IN ('M', 'C') ");
 
     if let Some(name) = menu_name {
         if !name.trim().is_empty() {
@@ -98,7 +98,7 @@ pub async fn select_menu_list_with_params(db: &MySqlPool, menu_name: Option<&str
     Ok(menus)
 }
 /// 根据菜单ID查询菜单详情
-pub async fn select_menu_by_id(db: &MySqlPool, menu_id: i64) -> Result<SysMenu, AppError> {
+pub async fn select_menu_by_id(db: &PgPool, menu_id: i64) -> Result<SysMenu, AppError> {
     let menu = sqlx::query_as!(SysMenu, "SELECT * FROM sys_menu WHERE menu_id = ?", menu_id)
         .fetch_one(db)
         .await?;
@@ -106,7 +106,7 @@ pub async fn select_menu_by_id(db: &MySqlPool, menu_id: i64) -> Result<SysMenu, 
 }
 
 /// 新增菜单
-pub async fn add_menu(db: &MySqlPool, menu: AddMenuVo) -> Result<u64, AppError> {
+pub async fn add_menu(db: &PgPool, menu: AddMenuVo) -> Result<u64, AppError> {
     let is_frame_num: i32 = menu.is_frame;
     let is_cache_num: i32 = menu.is_cache;
 
@@ -135,7 +135,7 @@ pub async fn add_menu(db: &MySqlPool, menu: AddMenuVo) -> Result<u64, AppError> 
 }
 
 /// 修改菜单
-pub async fn update_menu(db: &MySqlPool, menu: UpdateMenuVo) -> Result<u64, AppError> {
+pub async fn update_menu(db: &PgPool, menu: UpdateMenuVo) -> Result<u64, AppError> {
     let is_frame_num: i32 = menu.is_frame;
     let is_cache_num: i32 = menu.is_cache;
 
@@ -166,7 +166,7 @@ pub async fn update_menu(db: &MySqlPool, menu: UpdateMenuVo) -> Result<u64, AppE
 }
 
 /// 删除菜单
-pub async fn delete_menu_by_id(db: &MySqlPool, menu_id: i64) -> Result<u64, AppError> {
+pub async fn delete_menu_by_id(db: &PgPool, menu_id: i64) -> Result<u64, AppError> {
     // RuoYi 删除菜单时会检查是否有子菜单，我们暂时简化
     let result = sqlx::query!("DELETE FROM sys_menu WHERE menu_id = ?", menu_id)
         .execute(db)
@@ -175,7 +175,7 @@ pub async fn delete_menu_by_id(db: &MySqlPool, menu_id: i64) -> Result<u64, AppE
 }
 
 /// 查询所有菜单，用于构建菜单选择树
-pub async fn select_menu_list_for_treeselect(db: &MySqlPool) -> Result<Vec<SysMenu>, AppError> {
+pub async fn select_menu_list_for_treeselect(db: &PgPool) -> Result<Vec<SysMenu>, AppError> {
     // 关键区别：这里需要获取所有类型的菜单（M, C, F），而不仅仅是 M 和 C
     // 并且只选择状态正常的菜单
     info!("[SERVICE] Entering select_menu_list_for_treeselect");

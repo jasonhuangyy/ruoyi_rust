@@ -47,11 +47,11 @@ pub struct ListUserQuery {
     pub begin_time: Option<String>,
     #[serde(rename = "params[endTime]")]
     pub end_time: Option<String>,
-    pub page_num: Option<u64>,
-    pub page_size: Option<u64>,
+    pub page_num: Option<i64>,
+    pub page_size: Option<i64>,
 }
 
-/// 用户列表展示的视图对象  
+/// 用户列表展示的视图对象
 /// 它结合了 `SysUser` 和 `SysDept` 的信息。
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -69,7 +69,7 @@ pub struct AddUserInitVo {
     pub roles: Vec<SysRole>,
     pub posts: Vec<SysPost>,
 }
-/// 新增用户时接收前端数据的请求体  
+/// 新增用户时接收前端数据的请求体
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AddUserVo {
@@ -86,7 +86,7 @@ pub struct AddUserVo {
     pub post_ids: Option<Vec<i64>>,
 }
 
-/// 修改用户时接收前端数据的请求体  
+/// 修改用户时接收前端数据的请求体
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUserVo {
@@ -134,7 +134,7 @@ pub struct UserDetailVo {
     pub posts: Vec<SysPost>,
 }
 
-/// 获取用户个人信息时返回给前端的视图对象  
+/// 获取用户个人信息时返回给前端的视图对象
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfileVo {
@@ -146,7 +146,7 @@ pub struct UserProfileVo {
     pub post_group: String,
 }
 
-/// 用户修改个人密码时接收前端数据的请求体  
+/// 用户修改个人密码时接收前端数据的请求体
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatePwdVo {
@@ -154,7 +154,7 @@ pub struct UpdatePwdVo {
     pub new_password: String,
 }
 
-/// 角色分配页面展示的视图对象  
+/// 角色分配页面展示的视图对象
 /// 这个结构体是为了 `get_auth_role` 接口返回数据而设计的。
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -163,7 +163,7 @@ pub struct AuthRoleVo {
     pub roles: Vec<SysRole>,
 }
 
-/// 更新用户角色分配时接收的请求体  
+/// 更新用户角色分配时接收的请求体
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAuthRoleVo {
@@ -171,7 +171,7 @@ pub struct UpdateAuthRoleVo {
     pub role_ids: String, // 前端传来的是以逗号分隔的字符串 "1,2,3"
 }
 
-/// 个人中心-用户详细资料-视图对象  
+/// 个人中心-用户详细资料-视图对象
 /// 包含了用户基本信息和其关联的部门信息
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -181,7 +181,7 @@ pub struct UserProfileDetailVo {
     pub dept: Option<SysDept>,
 }
 
-/// 个人中心-更新基本资料-请求体  
+/// 个人中心-更新基本资料-请求体
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProfileVo {
@@ -191,7 +191,7 @@ pub struct UpdateProfileVo {
     pub sex: String,
 }
 
-/// 个人中心-上传头像-成功响应体   
+/// 个人中心-上传头像-成功响应体
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAvatarVo {

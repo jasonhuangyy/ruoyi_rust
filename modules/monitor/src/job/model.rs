@@ -33,11 +33,9 @@ pub struct ListJobQuery {
     pub job_name: Option<String>,
     pub job_group: Option<String>,
     pub status: Option<String>,
-    pub page_num: Option<u64>,
-    pub page_size: Option<u64>,
+    pub page_num: Option<i64>,
+    pub page_size: Option<i64>,
 }
-
-
 
 // 这个函数现在能处理 JSON 值，无论是数字还是字符串，都将其转换为无引号的字符串。
 fn deserialize_to_string<'de, D>(deserializer: D) -> Result<String, D::Error>

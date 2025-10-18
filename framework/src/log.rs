@@ -21,7 +21,6 @@ pub fn init_tracing() {
 
     let file_layer = fmt::layer()
         .with_writer(non_blocking_writer)
-        .json()
         .with_ansi(false);
 
     let console_layer = fmt::layer().with_writer(std::io::stdout).pretty();

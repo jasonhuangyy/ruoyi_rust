@@ -16,7 +16,7 @@ use framework::state::AppState;
 use jwt_simple::prelude::*;
 use monitor::logininfor;
 use monitor::logininfor::model::SysLogininfor;
-use sqlx::MySqlPool;
+use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::{error, info, instrument};
 use uuid::Uuid;
@@ -45,7 +45,7 @@ pub struct UserDetail {
     // ... 可以添加更多用户详情字段，如 avatar, email等
 }
 
-async fn record_login_log(db_pool: MySqlPool, user_name: String, ipaddr: String, status: &'static str, msg: String) {
+async fn record_login_log(db_pool: PgPool, user_name: String, ipaddr: String, status: &'static str, msg: String) {
     let log = SysLogininfor {
         info_id: 0,
         user_name: Some(user_name),
@@ -69,7 +69,6 @@ async fn record_login_log(db_pool: MySqlPool, user_name: String, ipaddr: String,
         }
     });
 }
- 
 
 #[instrument(skip(state, payload))]
 pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extension<ConnectInfo<SocketAddr>>, Json(payload): Json<LoginRequest>) -> Result<Json<AjaxResult<LoginVo>>, AppError> {
@@ -82,7 +81,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
         payload.password,
         payload.code,
         payload.uuid,
-    );  
+    );
     info!(
         "[LOGIN_HANDLER] 收到standard登录请求: user='{}', ip='{}'",
         user_name, ipaddr
@@ -197,14 +196,21 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
     info!("[LOGIN_HANDLER] 在线用户信息已存入缓存.");
 
     // --- 4. 记录成功日志并返回 ---
-    record_login_log(db_pool, db_user.user_name, ipaddr, "0", "登录成功".to_string()).await;
+    record_login_log(
+        db_pool,
+        db_user.user_name,
+        ipaddr,
+        "0",
+        "登录成功".to_string(),
+    )
+    .await;
 
     let vo = LoginVo { token };
     info!("[LOGIN_HANDLER] 登录流程全部完成，返回 Token.");
     Ok(Json(AjaxResult::success(vo)))
 }
 
-/// 处理获取当前登录用户信息的请求 
+/// 处理获取当前登录用户信息的请求
 // 使用 Extension 提取器，从请求扩展中获取由 auth 中间件注入的 ClaimsData
 pub async fn get_info(State(state): State<Arc<AppState>>, Extension(claims): Extension<ClaimsData>) -> Result<impl IntoResponse, AppError> {
     info!(
@@ -234,7 +240,7 @@ pub async fn get_info(State(state): State<Arc<AppState>>, Extension(claims): Ext
         permissions.len()
     );
 
-    // 4. 封装成前端需要的业务数据 VO (View Object) 
+    // 4. 封装成前端需要的业务数据 VO (View Object)
     let vo = UserInfoVo {
         user: UserDetailVo {
             user_id: user_detail.user_id,

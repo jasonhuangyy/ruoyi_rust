@@ -1,18 +1,18 @@
 use crate::role::model::{AddRoleVo, ChangeStatusVo, ListRoleQuery, SysRole, UpdateRoleVo};
 use common::{error::AppError, page::TableDataInfo};
 use rust_xlsxwriter::Workbook;
-use sqlx::{MySql, MySqlPool, QueryBuilder, Transaction};
+use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use tracing::{error, info, instrument};
 
 /// 查询角色列表（分页）
-pub async fn select_role_list(db: &MySqlPool, params: ListRoleQuery) -> Result<TableDataInfo<SysRole>, AppError> {
+pub async fn select_role_list(db: &PgPool, params: ListRoleQuery) -> Result<TableDataInfo<SysRole>, AppError> {
     info!(
         "[SERVICE] Entering select_role_list with params: {:?}",
         params
     );
 
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_role WHERE del_flag = '0'");
-    let mut count_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT COUNT(*) FROM sys_role WHERE del_flag = '0'");
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_role WHERE del_flag = '0'");
+    let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) FROM sys_role WHERE del_flag = '0'");
 
     if let Some(name) = params.role_name {
         if !name.trim().is_empty() {
@@ -92,7 +92,7 @@ pub async fn select_role_list(db: &MySqlPool, params: ListRoleQuery) -> Result<T
 }
 
 /// 根据角色ID查询角色详情
-pub async fn select_role_by_id(db: &MySqlPool, role_id: i64) -> Result<SysRole, AppError> {
+pub async fn select_role_by_id(db: &PgPool, role_id: i64) -> Result<SysRole, AppError> {
     info!(
         "[SERVICE] Entering select_role_by_id with role_id: {}",
         role_id
@@ -105,7 +105,7 @@ pub async fn select_role_by_id(db: &MySqlPool, role_id: i64) -> Result<SysRole, 
 }
 
 /// 根据角色ID查询其关联的菜单ID列表
-pub async fn select_menu_ids_by_role_id(db: &MySqlPool, role_id: i64) -> Result<Vec<i64>, AppError> {
+pub async fn select_menu_ids_by_role_id(db: &PgPool, role_id: i64) -> Result<Vec<i64>, AppError> {
     info!(
         "[SERVICE] Entering select_menu_ids_by_role_id with role_id: {}",
         role_id
@@ -125,7 +125,7 @@ pub async fn select_menu_ids_by_role_id(db: &MySqlPool, role_id: i64) -> Result<
 }
 
 /// 新增角色，并处理其与菜单的关联关系（事务性）
-pub async fn add_role(db: &MySqlPool, vo: AddRoleVo) -> Result<u64, AppError> {
+pub async fn add_role(db: &PgPool, vo: AddRoleVo) -> Result<u64, AppError> {
     info!("[SERVICE] Entering add_role with vo: {:?}", vo);
     let mut tx = db.begin().await.map_err(AppError::DatabaseError)?;
     info!("[TX] Transaction started for adding a new role.");
@@ -157,7 +157,7 @@ pub async fn add_role(db: &MySqlPool, vo: AddRoleVo) -> Result<u64, AppError> {
 }
 
 /// 修改角色，并处理其与菜单的关联关系（事务性）
-pub async fn update_role(db: &MySqlPool, vo: UpdateRoleVo) -> Result<u64, AppError> {
+pub async fn update_role(db: &PgPool, vo: UpdateRoleVo) -> Result<u64, AppError> {
     info!("[SERVICE] Entering update_role with vo: {:?}", vo);
     let mut tx = db.begin().await?;
     info!(
@@ -201,7 +201,7 @@ pub async fn update_role(db: &MySqlPool, vo: UpdateRoleVo) -> Result<u64, AppErr
 }
 
 /// 批量删除角色（逻辑删除）
-pub async fn delete_role_by_ids(db: &MySqlPool, role_ids: Vec<i64>) -> Result<u64, AppError> {
+pub async fn delete_role_by_ids(db: &PgPool, role_ids: Vec<i64>) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering delete_role_by_ids with ids: {:?}",
         role_ids
@@ -239,7 +239,7 @@ pub async fn delete_role_by_ids(db: &MySqlPool, role_ids: Vec<i64>) -> Result<u6
 }
 
 /// 修改角色状态
-pub async fn change_role_status(db: &MySqlPool, vo: ChangeStatusVo) -> Result<u64, AppError> {
+pub async fn change_role_status(db: &PgPool, vo: ChangeStatusVo) -> Result<u64, AppError> {
     info!("[SERVICE] Entering change_role_status with vo: {:?}", vo);
     let result = sqlx::query!(
         "UPDATE sys_role SET status = ? WHERE role_id = ?",
@@ -256,7 +256,7 @@ pub async fn change_role_status(db: &MySqlPool, vo: ChangeStatusVo) -> Result<u6
 }
 
 /// 辅助函数：在事务中插入角色与菜单的关联记录
-async fn insert_role_menu(tx: &mut Transaction<'_, MySql>, role_id: i64, menu_ids: &[i64]) -> Result<(), AppError> {
+async fn insert_role_menu(tx: &mut Transaction<'_, Postgres>, role_id: i64, menu_ids: &[i64]) -> Result<(), AppError> {
     info!(
         "[TX_HELPER] Inserting {} menu associations for role_id: {}",
         menu_ids.len(),
@@ -276,7 +276,7 @@ async fn insert_role_menu(tx: &mut Transaction<'_, MySql>, role_id: i64, menu_id
 }
 
 /// 根据角色键(role_key)列表查询对应的角色ID列表。
-pub async fn select_role_ids_by_keys(db: &MySqlPool, role_keys: &[String]) -> Result<Vec<i64>, AppError> {
+pub async fn select_role_ids_by_keys(db: &PgPool, role_keys: &[String]) -> Result<Vec<i64>, AppError> {
     if role_keys.is_empty() {
         // return Ok(vec![]);
         let msg = "role_keys 字段为空,无法获取角色";
@@ -315,7 +315,7 @@ pub async fn select_role_ids_by_keys(db: &MySqlPool, role_keys: &[String]) -> Re
 ///
 /// 此函数专为用户管理、角色分配等需要全量角色列表的场景设计。
 #[instrument(skip(db))]
-pub async fn select_all_active_roles(db: &MySqlPool) -> Result<Vec<SysRole>, AppError> {
+pub async fn select_all_active_roles(db: &PgPool) -> Result<Vec<SysRole>, AppError> {
     info!("[SERVICE] Entering select_all_active_roles");
 
     let roles: Vec<SysRole> = sqlx::query_as("SELECT * FROM sys_role WHERE status = '0' AND del_flag = '0' ORDER BY role_sort")
@@ -327,14 +327,13 @@ pub async fn select_all_active_roles(db: &MySqlPool) -> Result<Vec<SysRole>, App
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_role_list(db: &MySqlPool, params: ListRoleQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_role_list(db: &PgPool, params: ListRoleQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting role list export with params: {:?}",
         params
     );
 
-    let mut query_builder: QueryBuilder<MySql> =
-        QueryBuilder::new("SELECT * FROM sys_role WHERE del_flag = '0'");
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_role WHERE del_flag = '0'");
 
     if let Some(name) = params.role_name {
         if !name.trim().is_empty() {
@@ -411,8 +410,9 @@ pub async fn export_role_list(db: &MySqlPool, params: ListRoleQuery) -> Result<V
         worksheet.write(
             row,
             5,
-            role.create_time
-                .map_or("".to_string(), |t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
+            role.create_time.map_or("".to_string(), |t| {
+                t.format("%Y-%m-%d %H:%M:%S").to_string()
+            }),
         )?;
     }
 

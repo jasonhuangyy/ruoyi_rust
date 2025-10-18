@@ -8,7 +8,7 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
-use common::{ response::AjaxResult};
+use common::response::AjaxResult;
 use common::{error::AppError, page::TableDataInfo};
 use framework::jwt::ClaimsData;
 use framework::state::AppState;
