@@ -26,7 +26,9 @@ pub struct SysUser {
 
 /// 验证码接口的业务数据
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CaptchaVo {
+    pub captcha_enabled:bool,
     pub uuid: String,
     pub img: String,
 }

@@ -16,3 +16,4 @@ config/default.toml
 .idea/
 Cargo.lock
 
+/logs/
