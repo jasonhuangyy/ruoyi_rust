@@ -1,7 +1,7 @@
 //! 岗位管理模块的处理器层
 
 use super::{
-    model::{AddPostVo, ListPostQuery, PostOptionVo, SysPost, UpdatePostVo},
+    model::{AddPostVo, ListPostQuery, PostOptionVo, UpdatePostVo},
     service,
 };
 use axum::http::{header, HeaderMap, StatusCode};
@@ -11,6 +11,7 @@ use axum::{
     Extension, Json,
 };
 use common::{auth::Permission, error::AppError, page::TableDataInfo, response::AjaxResult};
+use entity::prelude::SysPostModel;
 use framework::{jwt::ClaimsData, state::AppState};
 use ruoyi_macros::require_permission;
 use serde_json::json;
@@ -19,7 +20,7 @@ use tracing::info;
 
 /// 获取岗位列表 (分页)
 #[require_permission(Permission::PostList)]
-pub async fn list(State(state): State<Arc<AppState>>, Extension(_claims): Extension<ClaimsData>, Query(params): Query<ListPostQuery>) -> Result<Json<TableDataInfo<SysPost>>, AppError> {
+pub async fn list(State(state): State<Arc<AppState>>, Extension(_claims): Extension<ClaimsData>, Query(params): Query<ListPostQuery>) -> Result<Json<TableDataInfo<SysPostModel>>, AppError> {
     info!("[HANDLER] Entering post::list with params: {:?}", params);
     let list_data = service::select_post_list(&state.db, params).await?;
     Ok(Json(list_data))

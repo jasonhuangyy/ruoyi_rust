@@ -1,5 +1,5 @@
 use super::{
-    model::{AddRoleVo, ChangeStatusVo, ListRoleQuery, SysRole, UpdateRoleVo},
+    model::{AddRoleVo, ChangeStatusVo, ListRoleQuery, UpdateRoleVo},
     service,
 };
 use axum::response::IntoResponse;
@@ -9,6 +9,7 @@ use axum::{
     Extension, Json,
 };
 use common::{auth::Permission, error::AppError, page::TableDataInfo, response::AjaxResult};
+use entity::prelude::SysRoleModel;
 use framework::jwt::ClaimsData;
 use framework::state::AppState;
 use ruoyi_macros::require_permission;
@@ -18,7 +19,7 @@ use tracing::info;
 
 /// 获取角色列表 (分页)
 #[require_permission(Permission::RoleList)]
-pub async fn list(State(state): State<Arc<AppState>>, Extension(_claims): Extension<ClaimsData>, Query(params): Query<ListRoleQuery>) -> Result<Json<TableDataInfo<SysRole>>, AppError> {
+pub async fn list(State(state): State<Arc<AppState>>, Extension(_claims): Extension<ClaimsData>, Query(params): Query<ListRoleQuery>) -> Result<Json<TableDataInfo<SysRoleModel>>, AppError> {
     info!("[HANDLER] Entering role::list with params: {:?}", params);
     let list_data = service::select_role_list(&state.db, params).await?;
     Ok(Json(list_data))

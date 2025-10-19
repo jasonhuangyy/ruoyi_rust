@@ -7,7 +7,7 @@ use entity::{
 use moka::future::Cache;
 use rust_xlsxwriter::Workbook;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
-use sqlx::{PgPool, Postgres, QueryBuilder, Row};
+use sqlx::{Postgres, QueryBuilder, Row};
 use tracing::{info, instrument};
 
 /// 查询字典类型列表（分页）
@@ -93,24 +93,28 @@ pub async fn add_dict_type(db: &DatabaseConnection, vo: AddDictTypeVo) -> Result
 }
 
 /// 修改字典类型
-pub async fn update_dict_type(db: &DatabaseConnection, vo: UpdateDictTypeVo, cache: &Cache<String, Vec<SysDictDataModel>>) -> Result<u64, AppError> {
+pub async fn update_dict_type(db: &DatabaseConnection, vo: UpdateDictTypeVo, cache: &Cache<String, Vec<SysDictDataModel>>) -> Result<(), AppError> {
     // 如果字典类型字符串（dict_type）被修改，需要删除旧的缓存
     // 1. 先查询旧的数据
+    let dict_type = vo.dict_type.clone();
+
     let old_dict_type = select_dict_type_by_id(db, vo.dict_id).await?;
     // 2. 执行更新
-    let result = sqlx::query!(
-        "UPDATE sys_dict_type SET dict_name = ?, dict_type = ?, status = ?, remark = ?, update_by = 'admin', update_time = NOW() WHERE dict_id = ?",
-        vo.dict_name,
-        vo.dict_type,
-        vo.status,
-        vo.remark,
-        vo.dict_id
-    )
-    .execute(db)
-    .await?;
+    // let result = sqlx::query!(
+    //     "UPDATE sys_dict_type SET dict_name = ?, dict_type = ?, status = ?, remark = ?, update_by = 'admin', update_time = NOW() WHERE dict_id = ?",
+    //     vo.dict_name,
+    //     vo.dict_type,
+    //     vo.status,
+    //     vo.remark,
+    //     vo.dict_id
+    // )
+    // .execute(db)
+    // .await?;
+    let act_model: sys_dict_type::ActiveModel = vo.into();
+    act_model.update(db).await?;
     // 3. 如果 dict_type 发生了变化，使旧的缓存失效
     if let Some(old_type) = old_dict_type.dict_type {
-        if old_type != vo.dict_type {
+        if old_type != dict_type {
             let old_cache_key = format!("{}{}", cache_keys::SYS_DICT_KEY, old_type);
             cache.invalidate(&old_cache_key).await;
             info!(
@@ -119,7 +123,7 @@ pub async fn update_dict_type(db: &DatabaseConnection, vo: UpdateDictTypeVo, cac
             );
         }
     }
-    Ok(result.rows_affected())
+    Ok(())
 }
 
 /// 删除字典类型
@@ -274,20 +278,24 @@ pub async fn update_dict_data(db: &DatabaseConnection, vo: UpdateDictDataVo, cac
 }
 
 /// 删除字典数据
-pub async fn delete_dict_data_by_codes(db: &PgPool, codes: Vec<i64>, _cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
+pub async fn delete_dict_data_by_codes(db: &DatabaseConnection, codes: Vec<i64>, _cache: &Cache<String, Vec<SysDictDataModel>>) -> Result<u64, AppError> {
     // 为了使缓存失效，需要知道被删除的数据的 dict_type
     // 实际项目中，这里可以先查询一次，或者让前端把 dict_type 传来。为简化，假设批量删除的都是同一种类型。
     // 这里先不处理缓存失效，因为不知道 dict_type。
-    let query_str = format!(
-        "DELETE FROM sys_dict_data WHERE dict_code IN ({})",
-        codes
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<String>>()
-            .join(",")
-    );
-    let result = sqlx::query(&query_str).execute(db).await?;
-    Ok(result.rows_affected())
+    // let query_str = format!(
+    //     "DELETE FROM sys_dict_data WHERE dict_code IN ({})",
+    //     codes
+    //         .iter()
+    //         .map(|id| id.to_string())
+    //         .collect::<Vec<String>>()
+    //         .join(",")
+    // );
+
+    let result = SysDictData::delete_many()
+        .filter(SysDictDataColumn::DictCode.is_in(codes))
+        .exec(db)
+        .await?;
+    Ok(result.rows_affected)
 }
 
 /// 根据字典类型查询字典数据列表（核心缓存接口）

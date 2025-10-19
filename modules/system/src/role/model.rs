@@ -1,28 +1,28 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-/// 角色信息实体，与 `sys_role` 数据库表完全对应。
-/// `sqlx::FromRow` 使得它可以从数据库查询结果自动映射。
-/// `Serialize`, `Deserialize` 用于JSON序列化和反序列化。
-#[derive(sqlx::FromRow, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")] // 确保JSON字段为驼峰命名，以匹配前端
-pub struct SysRole {
-    pub role_id: i64,
-    pub role_name: String,
-    pub role_key: String,
-    pub role_sort: i32,
-    pub data_scope: Option<String>,
-    pub menu_check_strictly: Option<i8>, // tinyint(1) 对应 i8
-    pub dept_check_strictly: Option<i8>,
-    pub status: String,
-    #[serde(skip_serializing)]
-    pub del_flag: Option<String>,
-    pub create_by: Option<String>,
-    pub create_time: Option<NaiveDateTime>,
-    pub update_by: Option<String>,
-    pub update_time: Option<NaiveDateTime>,
-    pub remark: Option<String>,
-}
+// /// 角色信息实体，与 `sys_role` 数据库表完全对应。
+// /// `sqlx::FromRow` 使得它可以从数据库查询结果自动映射。
+// /// `Serialize`, `Deserialize` 用于JSON序列化和反序列化。
+// #[derive(sqlx::FromRow, Debug, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")] // 确保JSON字段为驼峰命名，以匹配前端
+// pub struct SysRole {
+//     pub role_id: i64,
+//     pub role_name: String,
+//     pub role_key: String,
+//     pub role_sort: i32,
+//     pub data_scope: Option<String>,
+//     pub menu_check_strictly: Option<i8>, // tinyint(1) 对应 i8
+//     pub dept_check_strictly: Option<i8>,
+//     pub status: String,
+//     #[serde(skip_serializing)]
+//     pub del_flag: Option<String>,
+//     pub create_by: Option<String>,
+//     pub create_time: Option<NaiveDateTime>,
+//     pub update_by: Option<String>,
+//     pub update_time: Option<NaiveDateTime>,
+//     pub remark: Option<String>,
+// }
 
 /// 用于角色列表查询的参数结构体
 /// `Deserialize` 使其能从URL的query string中反序列化

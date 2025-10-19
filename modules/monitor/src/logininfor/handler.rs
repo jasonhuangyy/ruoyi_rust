@@ -1,7 +1,4 @@
-use super::{
-    model::{ListLogininforQuery, SysLogininfor},
-    service,
-};
+use super::{model::ListLogininforQuery, service};
 use axum::{
     extract::{Form, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -9,6 +6,7 @@ use axum::{
     Extension, Json,
 };
 use common::{error::AppError, page::TableDataInfo, response::AjaxResult};
+use entity::prelude::SysLogininforModel;
 use framework::jwt::ClaimsData;
 use framework::state::AppState;
 use ruoyi_macros::require_permission;
@@ -16,7 +14,7 @@ use std::sync::Arc;
 use tracing::info;
 
 /// 获取登录日志列表 (分页)
-pub async fn list(State(state): State<Arc<AppState>>, Query(params): Query<ListLogininforQuery>) -> Result<Json<TableDataInfo<SysLogininfor>>, AppError> {
+pub async fn list(State(state): State<Arc<AppState>>, Query(params): Query<ListLogininforQuery>) -> Result<Json<TableDataInfo<SysLogininforModel>>, AppError> {
     info!(
         "[HANDLER] Entering logininfor::list with params: {:?}",
         params

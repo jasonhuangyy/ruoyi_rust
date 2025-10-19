@@ -66,7 +66,7 @@ impl Into<sys_dict_type::ActiveModel> for UpdateDictTypeVo {
             status: Set(Some(self.status)),
             remark: Set(self.remark),
             create_by: NotSet,
-            create_time: Set(Some(Local::now().naive_local())),
+            create_time: NotSet,
             update_by: NotSet,
             update_time: Set(Some(Local::now().naive_local())),
         }

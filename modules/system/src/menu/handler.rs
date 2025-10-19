@@ -2,7 +2,7 @@ use super::{
     model::MenuTreeVo, // 从 system/model.rs 引入 RouterVo, MetaVo
     service,
 };
-use crate::menu::model::{AddMenuVo, MenuTreeSelectVo, SysMenu, UpdateMenuVo};
+use crate::menu::model::{AddMenuVo, MenuTreeSelectVo, UpdateMenuVo};
 use crate::model::{MetaVo, RouterVo};
 use crate::role;
 use axum::extract::Path;
@@ -12,6 +12,7 @@ use axum::{
     Json,
 };
 use common::{error::AppError, response::AjaxResult};
+use entity::prelude::SysMenuModel;
 use framework::{jwt::ClaimsData, state::AppState};
 use serde_json::json;
 use std::sync::Arc;
@@ -23,7 +24,7 @@ pub async fn get_routers(
     Extension(claims): Extension<ClaimsData>,
 ) -> Result<Json<AjaxResult<Vec<RouterVo>>>, AppError> {
     // 调用服务层逻辑，获取菜单树
-    let menu_tree = service::select_menu_tree_by_user_id(&state.db_pool, claims.user_id).await?;
+    let menu_tree = service::select_menu_tree_by_user_id(&state.db, claims.user_id).await?;
 
     // 将 MenuTreeVo 转换为前端需要的 RouterVo 结构
     let router_vos = build_routers(menu_tree);
@@ -37,7 +38,7 @@ pub async fn list(
     // Query(params): Query<MenuListParams>, // 后续可以添加查询参数
 ) -> Result<Json<AjaxResult<Vec<MenuTreeVo>>>, AppError> {
     // 菜单管理界面通常需要树形结构来展示
-    let menu_list = service::select_menu_list(&state.db_pool).await?;
+    let menu_list = service::select_menu_list(&state.db).await?;
     // 调用我们已有的 build_menu_tree 函数来构建树
     let menu_tree = service::build_menu_tree(menu_list);
     Ok(Json(AjaxResult::success(menu_tree)))
@@ -46,7 +47,7 @@ pub async fn list(
 /// 获取菜单详细信息
 pub async fn get_detail(State(state): State<Arc<AppState>>, Path(menu_id): Path<i64>) -> Result<impl IntoResponse, AppError> {
     // 1. 返回值类型改为更通用的 impl IntoResponse
-    let menu = service::select_menu_by_id(&state.db_pool, menu_id).await?;
+    let menu = service::select_menu_by_id(&state.db, menu_id).await?;
 
     // 2. 手动构建前端需要的、带有 "data" 键的 JSON 结构
     let response = json!({
@@ -61,19 +62,19 @@ pub async fn get_detail(State(state): State<Arc<AppState>>, Path(menu_id): Path<
 
 /// 新增菜单
 pub async fn add(State(state): State<Arc<AppState>>, Json(body): Json<AddMenuVo>) -> Result<Json<AjaxResult<()>>, AppError> {
-    service::add_menu(&state.db_pool, body).await?;
+    service::add_menu(&state.db, body).await?;
     Ok(Json(AjaxResult::<()>::success_msg("新增成功")))
 }
 
 /// 修改菜单
 pub async fn update(State(state): State<Arc<AppState>>, Json(body): Json<UpdateMenuVo>) -> Result<Json<AjaxResult<()>>, AppError> {
-    service::update_menu(&state.db_pool, body).await?;
+    service::update_menu(&state.db, body).await?;
     Ok(Json(AjaxResult::<()>::success_msg("修改成功")))
 }
 
 /// 删除菜单
 pub async fn delete(State(state): State<Arc<AppState>>, Path(menu_id): Path<i64>) -> Result<Json<AjaxResult<()>>, AppError> {
-    service::delete_menu_by_id(&state.db_pool, menu_id).await?;
+    service::delete_menu_by_id(&state.db, menu_id).await?;
     Ok(Json(AjaxResult::<()>::success_msg("删除成功")))
 }
 
@@ -95,8 +96,8 @@ fn build_routers(menu_trees: Vec<MenuTreeVo>) -> Vec<RouterVo> {
                 meta: MetaVo {
                     title: menu.menu_name.clone(),
                     icon: menu.icon.clone().unwrap_or_default(),
-                    no_cache: menu.is_cache.unwrap_or(0) == 1,
-                    link: if menu.is_frame.unwrap_or(0) == 0 {
+                    no_cache: menu.is_cache.unwrap_or_default(),
+                    link: if menu.is_frame.unwrap_or(false) {
                         menu.path.clone()
                     } else {
                         None
@@ -128,7 +129,7 @@ fn build_routers(menu_trees: Vec<MenuTreeVo>) -> Vec<RouterVo> {
                     // 1: 子路由的 path 硬编码为 "index"
                     path: "index".to_string(),
                     // 2: 子路由的 name 根据新 path "index" 生成，得到 "Index"
-                    name: get_route_name(&SysMenu {
+                    name: get_route_name(&SysMenuModel {
                         path: Some("index".to_string()),
                         ..Default::default()
                     }),
@@ -161,7 +162,7 @@ fn build_routers(menu_trees: Vec<MenuTreeVo>) -> Vec<RouterVo> {
 }
 
 /// 获取路由名称
-fn get_route_name(menu: &SysMenu) -> String {
+fn get_route_name(menu: &SysMenuModel) -> String {
     // 动态路由的 path 通常是 ':id' 格式，需要转换成 NameId
     let mut path = menu.path.clone().unwrap_or_default();
     if path.starts_with(':') {
@@ -176,10 +177,10 @@ fn get_route_name(menu: &SysMenu) -> String {
 }
 
 /// 获取路由地址
-fn get_route_path(menu: &SysMenu) -> String {
+fn get_route_path(menu: &SysMenuModel) -> String {
     let mut path = menu.path.clone().unwrap_or_default();
     // 如果是外链
-    if menu.is_frame.unwrap_or(0) == 0 {
+    if menu.is_frame.unwrap_or(false) == false {
         return path;
     }
     // 如果是顶级目录
@@ -199,7 +200,7 @@ fn get_route_path(menu: &SysMenu) -> String {
 }
 
 /// 获取组件信息
-fn get_component(menu: &SysMenu) -> String {
+fn get_component(menu: &SysMenuModel) -> String {
     // let mut component = "Layout".to_string(); // 默认为 Layout
     // if let Some(comp_str) = &menu.component {
     //     if !comp_str.is_empty() {
@@ -235,7 +236,7 @@ fn get_component(menu: &SysMenu) -> String {
 pub async fn treeselect(State(state): State<Arc<AppState>>) -> Result<Json<AjaxResult<Vec<MenuTreeSelectVo>>>, AppError> {
     info!("[HANDLER] Entering menu::treeselect");
     // 1. 从数据库查询所有状态正常的菜单
-    let menus = service::select_menu_list_for_treeselect(&state.db_pool).await?;
+    let menus = service::select_menu_list_for_treeselect(&state.db).await?;
     // 2. 将扁平列表构建成树形结构
     let menu_tree = service::build_menu_treeselect(menus);
     // 3. 返回成功响应
@@ -272,11 +273,11 @@ pub async fn role_menu_treeselect(
     );
 
     // 1. 获取所有状态正常的菜单，用于构建完整的菜单树
-    let all_menus = service::select_menu_list_for_treeselect(&state.db_pool).await?;
+    let all_menus = service::select_menu_list_for_treeselect(&state.db).await?;
     let menu_tree = service::build_menu_treeselect(all_menus);
 
     // 2. 跨模块调用 role::service 来获取指定角色已关联的菜单ID
-    let checked_keys = role::service::select_menu_ids_by_role_id(&state.db_pool, role_id).await?;
+    let checked_keys = role::service::select_menu_ids_by_role_id(&state.db, role_id).await?;
 
     // 3. 手动构建前端期望的 JSON 响应体
     let response = json!({

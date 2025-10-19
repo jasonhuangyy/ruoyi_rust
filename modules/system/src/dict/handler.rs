@@ -1,5 +1,5 @@
 use super::{model::ListDictTypeQuery, service};
-use crate::dict::model::{AddDictDataVo, AddDictTypeVo, DictTypeOptionVo, ListDictDataQuery, UpdateDictDataVo, UpdateDictTypeVo};
+use crate::dict::model::{AddDictDataVo, AddDictTypeVo, ListDictDataQuery, UpdateDictDataVo, UpdateDictTypeVo};
 use axum::{
     extract::{Form, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -7,7 +7,7 @@ use axum::{
     Extension, Json,
 };
 use common::{error::AppError, page::TableDataInfo, response::AjaxResult};
-use entity::prelude::{SysDictType, SysDictTypeColumn, SysDictTypeModel};
+use entity::prelude::{SysDictDataModel, SysDictTypeModel};
 use framework::jwt::ClaimsData;
 use framework::state::AppState;
 use ruoyi_macros::require_permission;
@@ -72,7 +72,7 @@ pub async fn get_type_option_select(State(state): State<Arc<AppState>>) -> Resul
 }
 
 /// 获取字典数据列表 (分页)
-pub async fn list_data(State(state): State<Arc<AppState>>, Query(params): Query<ListDictDataQuery>) -> Result<Json<TableDataInfo<SysDictData>>, AppError> {
+pub async fn list_data(State(state): State<Arc<AppState>>, Query(params): Query<ListDictDataQuery>) -> Result<Json<TableDataInfo<SysDictDataModel>>, AppError> {
     let list = service::select_dict_data_list(&state.db, params).await?;
     Ok(Json(list))
 }
@@ -107,7 +107,7 @@ pub async fn delete_data(State(state): State<Arc<AppState>>, Path(dict_codes): P
         .split(',')
         .map(|s| s.parse().unwrap_or(0))
         .collect();
-    service::delete_dict_data_by_codes(&state.db, codes, &state.dict_cache).await?;
+    service::delete_dict_data_by_codes(&state.db, codes, &state.cache.dict_cache).await?;
     Ok(Json(AjaxResult::<()>::success_msg("删除成功")))
 }
 
@@ -115,9 +115,9 @@ pub async fn delete_data(State(state): State<Arc<AppState>>, Path(dict_codes): P
 pub async fn get_data_by_type(
     State(state): State<Arc<AppState>>,
     Path(dict_type): Path<String>, // 从路径中获取 dict_type
-) -> Result<Json<AjaxResult<Vec<SysDictData>>>, AppError> {
+) -> Result<Json<AjaxResult<Vec<SysDictDataModel>>>, AppError> {
     println!("[HANDLER] Received request for dict_type: {}", dict_type);
-    let dict_data = service::select_dict_data_by_type(&state.db, &state.dict_cache, &dict_type).await?;
+    let dict_data = service::select_dict_data_by_type(&state.db, &state.cache.dict_cache, &dict_type).await?;
     Ok(Json(AjaxResult::success(dict_data)))
 }
 

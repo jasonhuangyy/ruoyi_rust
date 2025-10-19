@@ -1,21 +1,21 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-/// 登录日志记录实体，与 `sys_logininfor` 数据库表完全对应。
-#[derive(sqlx::FromRow, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SysLogininfor {
-    pub info_id: i64,
-    pub user_name: Option<String>,
-    pub ipaddr: Option<String>,
-    pub login_location: Option<String>,
-    pub browser: Option<String>,
-    pub os: Option<String>,
-    // status 在数据库中是 char(1)，用 String 类型可以安全映射
-    pub status: Option<String>,
-    pub msg: Option<String>,
-    pub login_time: Option<NaiveDateTime>,
-}
+// /// 登录日志记录实体，与 `sys_logininfor` 数据库表完全对应。
+// #[derive(sqlx::FromRow, Debug, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct SysLogininfor {
+//     pub info_id: i64,
+//     pub user_name: Option<String>,
+//     pub ipaddr: Option<String>,
+//     pub login_location: Option<String>,
+//     pub browser: Option<String>,
+//     pub os: Option<String>,
+//     // status 在数据库中是 char(1)，用 String 类型可以安全映射
+//     pub status: Option<String>,
+//     pub msg: Option<String>,
+//     pub login_time: Option<NaiveDateTime>,
+// }
 
 /// 用于登录日志列表查询的参数结构体
 #[derive(Deserialize, Debug)]

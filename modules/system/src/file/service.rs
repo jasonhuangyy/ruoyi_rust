@@ -1,13 +1,13 @@
 use super::model::UploadFileVo;
 use chrono::Local;
 use common::error::AppError;
-use sqlx::PgPool;
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, NotSet};
 use std::path::Path;
 use tokio::fs;
 use tracing::{error, info};
 use uuid::Uuid;
 
-pub async fn save_file(db: &PgPool, username: &str, original_filename: &str, data: &[u8]) -> Result<UploadFileVo, AppError> {
+pub async fn save_file(db: &DatabaseConnection, username: &str, original_filename: &str, data: &[u8]) -> Result<UploadFileVo, AppError> {
     // 1. 生成年月目录和用户目录
     let yyyymm = Local::now().format("%Y%m").to_string();
     let user_dir = Path::new("uploads").join(&yyyymm).join(username);
@@ -49,22 +49,34 @@ pub async fn save_file(db: &PgPool, username: &str, original_filename: &str, dat
     let file_size = data.len() as i64;
 
     // 6. 插入数据库记录
-    let result = sqlx::query!(
-        r#"
-        INSERT INTO sys_upload_files
-        (original_name, stored_path, file_url, file_size, uploader_name, file_status)
-        VALUES (?, ?, ?, ?, ?, 'pending')
-        "#,
-        original_filename,
-        stored_path,
-        file_url,
-        file_size,
-        username
-    )
-    .execute(db)
+    let result = entity::sys_upload_files::ActiveModel {
+        file_id: NotSet,
+        original_name: Set(original_filename.to_string()),
+        stored_path: Set(stored_path.clone()),
+        file_url: Set(file_url.clone()),
+        file_size: Set(Some(file_size)),
+        uploader_name: Set(Some(username.to_string())),
+        file_status: Set("pending".to_string()),
+        ..Default::default()
+    }
+    .insert(db)
     .await?;
+    // let result = sqlx::query!(
+    //     r#"
+    //     INSERT INTO sys_upload_files
+    //     (original_name, stored_path, file_url, file_size, uploader_name, file_status)
+    //     VALUES (?, ?, ?, ?, ?, 'pending')
+    //     "#,
+    //     original_filename,
+    //     stored_path,
+    //     file_url,
+    //     file_size,
+    //     username
+    // )
+    // .execute(db)
+    // .await?;
 
-    let new_file_id = result.last_insert_id() as i64;
+    let new_file_id = result.file_id;
     info!(
         "Successfully uploaded file '{}' for user '{}', stored as '{}', file_id: {}",
         original_filename, username, stored_path, new_file_id

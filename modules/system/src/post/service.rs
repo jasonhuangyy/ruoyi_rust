@@ -1,15 +1,16 @@
 //! 岗位管理模块的服务层
 
-use super::model::{AddPostVo, ListPostQuery, PostOptionVo, SysPost, UpdatePostVo};
+use super::model::{AddPostVo, ListPostQuery, PostOptionVo, UpdatePostVo};
 use common::{error::AppError, page::TableDataInfo};
+use entity::prelude::SysPostModel;
 use rust_xlsxwriter::Workbook;
 use sea_orm::DatabaseConnection;
-use sqlx::{PgPool, Postgres, QueryBuilder};
+use sqlx::{Postgres, QueryBuilder};
 use tracing::{error, info, instrument};
 
 /// 分页查询岗位列表
 #[instrument(skip(db))]
-pub async fn select_post_list(db: &DatabaseConnection, params: ListPostQuery) -> Result<TableDataInfo<SysPost>, AppError> {
+pub async fn select_post_list(db: &DatabaseConnection, params: ListPostQuery) -> Result<TableDataInfo<SysPostModel>, AppError> {
     let db = db.get_postgres_connection_pool();
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_post WHERE 1=1");
     let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT count(*) FROM sys_post WHERE 1=1");
@@ -94,7 +95,7 @@ pub async fn select_post_list(db: &DatabaseConnection, params: ListPostQuery) ->
 
 /// 根据ID查询岗位详情
 #[instrument(skip(db))]
-pub async fn select_post_by_id(db: &PgPool, post_id: i64) -> Result<SysPost, AppError> {
+pub async fn select_post_by_id(db: &DatabaseConnection, post_id: i64) -> Result<SysPostModel, AppError> {
     sqlx::query_as("SELECT * FROM sys_post WHERE post_id = ?")
         .bind(post_id)
         .fetch_one(db)
@@ -103,7 +104,7 @@ pub async fn select_post_by_id(db: &PgPool, post_id: i64) -> Result<SysPost, App
 }
 
 /// 检查岗位名称是否唯一
-async fn check_post_name_unique(db: &PgPool, post_name: &str, post_id: Option<i64>) -> Result<(), AppError> {
+async fn check_post_name_unique(db: &DatabaseConnection, post_name: &str, post_id: Option<i64>) -> Result<(), AppError> {
     let mut query = QueryBuilder::new("SELECT post_id FROM sys_post WHERE post_name = ");
     query.push_bind(post_name);
     if let Some(id) = post_id {
@@ -118,7 +119,7 @@ async fn check_post_name_unique(db: &PgPool, post_name: &str, post_id: Option<i6
 }
 
 /// 检查岗位编码是否唯一
-async fn check_post_code_unique(db: &PgPool, post_code: &str, post_id: Option<i64>) -> Result<(), AppError> {
+async fn check_post_code_unique(db: &DatabaseConnection, post_code: &str, post_id: Option<i64>) -> Result<(), AppError> {
     let mut query = QueryBuilder::new("SELECT post_id FROM sys_post WHERE post_code = ");
     query.push_bind(post_code);
     if let Some(id) = post_id {
@@ -134,7 +135,7 @@ async fn check_post_code_unique(db: &PgPool, post_code: &str, post_id: Option<i6
 
 /// 新增岗位
 #[instrument(skip(db, data, operator))]
-pub async fn add_post(db: &PgPool, data: AddPostVo, operator: &str) -> Result<u64, AppError> {
+pub async fn add_post(db: &DatabaseConnection, data: AddPostVo, operator: &str) -> Result<u64, AppError> {
     check_post_name_unique(db, &data.post_name, None).await?;
     check_post_code_unique(db, &data.post_code, None).await?;
 
@@ -154,7 +155,7 @@ pub async fn add_post(db: &PgPool, data: AddPostVo, operator: &str) -> Result<u6
 
 /// 修改岗位
 #[instrument(skip(db, data, operator))]
-pub async fn update_post(db: &PgPool, data: UpdatePostVo, operator: &str) -> Result<u64, AppError> {
+pub async fn update_post(db: &DatabaseConnection, data: UpdatePostVo, operator: &str) -> Result<u64, AppError> {
     check_post_name_unique(db, &data.post_name, Some(data.post_id)).await?;
     check_post_code_unique(db, &data.post_code, Some(data.post_id)).await?;
 
@@ -175,7 +176,7 @@ pub async fn update_post(db: &PgPool, data: UpdatePostVo, operator: &str) -> Res
 
 /// 批量删除岗位 (物理删除)
 #[instrument(skip(db))]
-pub async fn delete_post_by_ids(db: &PgPool, post_ids: &[i64]) -> Result<u64, AppError> {
+pub async fn delete_post_by_ids(db: &DatabaseConnection, post_ids: &[i64]) -> Result<u64, AppError> {
     if post_ids.is_empty() {
         return Ok(0);
     }
@@ -196,7 +197,7 @@ pub async fn delete_post_by_ids(db: &PgPool, post_ids: &[i64]) -> Result<u64, Ap
 
 /// 获取所有启用的岗位作为下拉选项
 #[instrument(skip(db))]
-pub async fn select_all_posts_options(db: &PgPool) -> Result<Vec<PostOptionVo>, AppError> {
+pub async fn select_all_posts_options(db: &DatabaseConnection) -> Result<Vec<PostOptionVo>, AppError> {
     info!("[SERVICE] Fetching all enabled posts for dropdown options.");
     let posts = sqlx::query_as("SELECT post_id, post_name FROM sys_post WHERE status = '0' ORDER BY post_sort ASC")
         .fetch_all(db)
@@ -206,7 +207,7 @@ pub async fn select_all_posts_options(db: &PgPool) -> Result<Vec<PostOptionVo>, 
 
 /// 查询所有状态正常的岗位 (用于下拉框)
 #[instrument(skip(db))]
-pub async fn select_post_all(db: &PgPool) -> Result<Vec<SysPost>, AppError> {
+pub async fn select_post_all(db: &DatabaseConnection) -> Result<Vec<SysPostModel>, AppError> {
     info!("[SERVICE] Fetching all enabled posts.");
     let posts = sqlx::query_as("SELECT * FROM sys_post WHERE status = '0' ORDER BY post_sort ASC")
         .fetch_all(db)
@@ -223,7 +224,7 @@ pub async fn select_post_all(db: &PgPool) -> Result<Vec<SysPost>, AppError> {
 /// # Returns
 /// 成功时返回包含 Excel 文件内容的 `Vec<u8>`，失败时返回 `AppError`
 #[instrument(skip(db, params))]
-pub async fn export_post_list(db: &PgPool, params: ListPostQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_post_list(db: &DatabaseConnection, params: ListPostQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting post list export with params: {:?}",
         params
@@ -253,7 +254,7 @@ pub async fn export_post_list(db: &PgPool, params: ListPostQuery) -> Result<Vec<
     }
     query_builder.push(" ORDER BY post_sort ASC, create_time DESC");
 
-    let posts: Vec<SysPost> = query_builder.build_query_as().fetch_all(db).await?;
+    let posts: Vec<SysPostModel> = query_builder.build_query_as().fetch_all(db).await?;
     info!("[DB_RESULT] Fetched {} posts for export.", posts.len());
 
     // 2. 创建 Excel 工作簿和工作表

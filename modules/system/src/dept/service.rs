@@ -1,10 +1,18 @@
+use std::result;
+
 use super::model::{AddDeptVo, DeptTreeSelectVo, DeptTreeVo, UpdateDeptVo};
+use chrono::Local;
 use common::error::AppError;
 use entity::{
     prelude::{SysDept, SysDeptColumn, SysDeptModel},
     sys_dept,
 };
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait,
+    ActiveValue::{NotSet, Set},
+    ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, TransactionTrait,
+};
+use serde::de;
 use sqlx::{Postgres, QueryBuilder, Transaction};
 use tracing::{info, warn};
 
@@ -104,7 +112,7 @@ pub async fn add_dept(db: &DatabaseConnection, dept: AddDeptVo) -> Result<i64, A
 //     REPLACE(ancestors, old_path, new_path): 将 ancestors 字段中所有出现的 old_path 字符串替换为 new_path。
 //     WHERE ancestors LIKE 'old_path,%': 这个 WHERE 条件是关键，它确保只对 ancestors 以 old_path, 开头的行进行操作，也就是只更新真正的子孙部门，避免了错误地修改其他不相关的部门。
 //     提交事务: 所有操作成功后，提交事务，使更改永久生效。
-pub async fn update_dept(db: &DatabaseConnection, dept_vo: UpdateDeptVo) -> Result<u64, AppError> {
+pub async fn update_dept(db: &DatabaseConnection, dept_vo: UpdateDeptVo) -> Result<(), AppError> {
     info!(
         "[SERVICE] Entering dept::update_dept for dept_id: {}",
         dept_vo.dept_id
@@ -151,38 +159,52 @@ pub async fn update_dept(db: &DatabaseConnection, dept_vo: UpdateDeptVo) -> Resu
     info!("[CALC] New ancestors calculated: '{}'", new_ancestors);
 
     //  3: 更新当前部门自身的信息
-    let result = sqlx::query!(
-        r#"
-            UPDATE sys_dept
-            SET parent_id = ?, ancestors = ?, dept_name = ?, order_num = ?, leader = ?, phone = ?, email = ?, status = ?, update_by = 'admin', update_time = NOW()
-            WHERE dept_id = ?
-        "#,
-        dept_vo.parent_id,
-        new_ancestors,
-        dept_vo.dept_name,
-        dept_vo.order_num,
-        dept_vo.leader,
-        dept_vo.phone,
-        dept_vo.email,
-        dept_vo.status,
-        dept_vo.dept_id
-    )
-    .execute(&mut *tx)
-    .await?;
-    info!(
-        "[TX] Updated current department (id: {}) successfully.",
-        dept_vo.dept_id
-    );
+    let mut dept_act_model = old_dept.into_active_model();
+    dept_act_model.parent_id = Set(Some(dept_vo.parent_id));
+    dept_act_model.ancestors = Set(Some(new_ancestors.clone()));
+    dept_act_model.dept_name = Set(Some(dept_vo.dept_name));
+    dept_act_model.order_num = Set(Some(dept_vo.order_num));
+    dept_act_model.leader = Set(dept_vo.leader);
+    dept_act_model.phone = Set(dept_vo.phone);
+    dept_act_model.email = Set(dept_vo.email);
+    dept_act_model.status = Set(Some(dept_vo.status));
+    dept_act_model.update_by = Set(Some("admin".to_string()));
+    dept_act_model.update_time = Set(Some(Local::now().naive_local()));
+
+    let model = dept_act_model.update(db).await?;
+
+    // let result = sqlx::query!(
+    //     r#"
+    //         UPDATE sys_dept
+    //         SET parent_id = ?, ancestors = ?, dept_name = ?, order_num = ?, leader = ?, phone = ?, email = ?, status = ?, update_by = 'admin', update_time = NOW()
+    //         WHERE dept_id = ?
+    //     "#,
+    //     dept_vo.parent_id,
+    //     new_ancestors,
+    //     dept_vo.dept_name,
+    //     dept_vo.order_num,
+    //     dept_vo.leader,
+    //     dept_vo.phone,
+    //     dept_vo.email,
+    //     dept_vo.status,
+    //     dept_vo.dept_id
+    // )
+    // .execute(&mut *tx)
+    // .await?;
+    // info!(
+    //     "[TX] Updated current department (id: {}) successfully.",
+    //     dept_vo.dept_id
+    // );
 
     //  4: 如果祖级列表发生变化，则递归更新所有子孙部门
-    let old_ancestors = old_dept.ancestors.unwrap_or_default();
+    let old_ancestors = model.ancestors.unwrap_or_default();
     if new_ancestors != old_ancestors {
         info!("[RECURSIVE_UPDATE] Ancestors changed. Updating all children...");
 
         // 旧的完整祖级路径，例如 "0,100,101"
-        let old_children_path = format!("{},{}", old_ancestors, old_dept.dept_id);
+        let old_children_path = format!("{},{}", old_ancestors, model.dept_id);
         // 新的完整祖级路径，例如 "0,200,101"
-        let new_children_path = format!("{},{}", new_ancestors, old_dept.dept_id);
+        let new_children_path = format!("{},{}", new_ancestors, model.dept_id);
 
         info!(
             "[RECURSIVE_UPDATE] Replacing old path '{}' with new path '{}' for all descendants.",
@@ -195,8 +217,14 @@ pub async fn update_dept(db: &DatabaseConnection, dept_vo: UpdateDeptVo) -> Resu
             .bind(&old_children_path)
             .bind(&new_children_path)
             .bind(format!("{},%", old_children_path))
-            .execute(&tx)
+            .execute(db.get_postgres_connection_pool())
             .await?;
+
+        // SysDept::update_many()
+        //     .filter(SysDeptColumn::Ancestors.like(format!("{},%", old_children_path)))
+        //     .set(SysDeptColumn::Ancestors, new_children_path)
+        //     .execute(&tx)
+        //     .await?;
 
         info!(
             "[TX] Updated {} descendant departments.",
@@ -213,7 +241,7 @@ pub async fn update_dept(db: &DatabaseConnection, dept_vo: UpdateDeptVo) -> Resu
         dept_vo.dept_id
     );
 
-    Ok(result.rows_affected())
+    Ok(())
 }
 
 /// 删除部门（逻辑删除）
@@ -377,11 +405,11 @@ pub async fn select_dept_list_exclude_child(db: &DatabaseConnection, exclude_dep
 }
 
 /// 获取或创建默认部门，并返回其ID。此函数设计为在事务中安全运行。
-pub async fn get_or_create_default_dept(tx: &mut Transaction<'_, Postgres>, dept_name: &str) -> Result<i64, AppError> {
+pub async fn get_or_create_default_dept(db: &DatabaseConnection, dept_name: &str) -> Result<i64, AppError> {
     // 1. 尝试查找部门
-    let existing_dept: Option<SysDept> = sqlx::query_as("SELECT * FROM sys_dept WHERE dept_name = ? AND del_flag = '0' LIMIT 1")
+    let existing_dept: Option<SysDeptModel> = sqlx::query_as("SELECT * FROM sys_dept WHERE dept_name = ? AND del_flag = '0' LIMIT 1")
         .bind(dept_name)
-        .fetch_optional(&mut **tx)
+        .fetch_optional(db.get_postgres_connection_pool())
         .await?;
 
     if let Some(dept) = existing_dept {
@@ -396,17 +424,36 @@ pub async fn get_or_create_default_dept(tx: &mut Transaction<'_, Postgres>, dept
             "[SERVICE_DEPT] Default department '{}' not found. Creating it...",
             dept_name
         );
-        let result = sqlx::query!(
-            r#"
-            INSERT INTO sys_dept (parent_id, ancestors, dept_name, order_num, status, create_by, create_time)
-            VALUES (0, '0', ?, 0, '0', 'system', NOW())
-            "#,
-            dept_name
-        )
-        .execute(&mut **tx)
-        .await?;
 
-        let new_dept_id = result.last_insert_id() as i64;
+        let mut act_model = SysDeptModel {
+            parent_id: Some(0),
+            ancestors: Some("0".to_string()),
+            dept_name: Some(dept_name.to_string()),
+            order_num: Some(0),
+            status: Some("0".to_string()),
+            create_by: Some("system".to_string()),
+            ..Default::default()
+        }
+        .into_active_model();
+
+        act_model.dept_id = NotSet;
+        act_model.create_time = NotSet;
+        act_model.update_by = NotSet;
+        act_model.update_time = NotSet;
+
+        let result = act_model.insert(db).await?;
+
+        // let result = sqlx::query!(
+        //     r#"
+        //     INSERT INTO sys_dept (parent_id, ancestors, dept_name, order_num, status, create_by, create_time)
+        //     VALUES (0, '0', ?, 0, '0', 'system', NOW())
+        //     "#,
+        //     dept_name
+        // )
+        // .execute(&mut **tx)
+        // .await?;
+
+        let new_dept_id = result.dept_id;
         info!(
             "[SERVICE_DEPT] Created default department '{}' with new id: {}",
             dept_name, new_dept_id

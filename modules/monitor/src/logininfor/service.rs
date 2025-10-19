@@ -1,4 +1,4 @@
-use super::model::{ListLogininforQuery, SysLogininfor};
+use super::model::ListLogininforQuery;
 use common::error::AppError;
 use common::page::TableDataInfo;
 use entity::prelude::SysLogininforModel;
@@ -34,7 +34,7 @@ pub async fn add_logininfor(db: &DatabaseConnection, log: SysLogininforModel) ->
 }
 
 /// 查询登录日志列表（分页）
-pub async fn select_logininfor_list(db: &DatabaseConnection, params: ListLogininforQuery) -> Result<TableDataInfo<SysLogininfor>, AppError> {
+pub async fn select_logininfor_list(db: &DatabaseConnection, params: ListLogininforQuery) -> Result<TableDataInfo<SysLogininforModel>, AppError> {
     info!(
         "[SERVICE] Entering select_logininfor_list with params: {:?}",
         params
@@ -112,7 +112,7 @@ pub async fn select_logininfor_list(db: &DatabaseConnection, params: ListLoginin
         .push_bind(offset);
 
     info!("[DB_QUERY] Executing query for logininfor list (using QueryBuilder)");
-    let rows: Vec<SysLogininfor> = query_builder
+    let rows: Vec<SysLogininforModel> = query_builder
         .build_query_as()
         .fetch_all(db.get_postgres_connection_pool())
         .await?;
@@ -201,7 +201,7 @@ pub async fn export_logininfor_list(db: &DatabaseConnection, params: ListLoginin
     }
     query_builder.push(" ORDER BY login_time DESC");
 
-    let login_logs: Vec<SysLogininfor> = query_builder
+    let login_logs: Vec<SysLogininforModel> = query_builder
         .build_query_as()
         .fetch_all(db.get_postgres_connection_pool())
         .await?;

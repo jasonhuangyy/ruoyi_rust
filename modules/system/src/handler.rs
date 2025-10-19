@@ -1,22 +1,22 @@
 use crate::model::{CaptchaVo, LoginRequest, LoginVo, UserDetailVo, UserInfoVo};
+use crate::user;
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use axum::extract::ConnectInfo;
 use axum::response::IntoResponse;
 use axum::{extract::State, Extension, Json};
 use captcha::Captcha;
-use common::error::AppError;
-use common::response::AjaxResult;
-use std::net::SocketAddr;
-
-use crate::user;
-use axum::extract::ConnectInfo;
 use chrono::Local;
+use common::error::AppError;
 use common::models::online_model::SysUserOnline;
+use common::response::AjaxResult;
+use entity::prelude::SysLogininforModel;
 use framework::jwt::ClaimsData;
 use framework::state::AppState;
 use jwt_simple::prelude::*;
 use monitor::logininfor;
 use monitor::logininfor::model::SysLogininfor;
-use sqlx::PgPool;
+use sqlx::DatabaseConnnection;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{error, info, instrument};
 use uuid::Uuid;
@@ -45,8 +45,8 @@ pub struct UserDetail {
     // ... 可以添加更多用户详情字段，如 avatar, email等
 }
 
-async fn record_login_log(db_pool: PgPool, user_name: String, ipaddr: String, status: &'static str, msg: String) {
-    let log = SysLogininfor {
+async fn record_login_log(db: &DatabaseConnnection, user_name: String, ipaddr: String, status: &'static str, msg: String) {
+    let log = SysLogininforModel {
         info_id: 0,
         user_name: Some(user_name),
         ipaddr: Some(ipaddr),
@@ -61,7 +61,7 @@ async fn record_login_log(db_pool: PgPool, user_name: String, ipaddr: String, st
 
     // 在一个独立的后台任务中执行数据库写入
     tokio::spawn(async move {
-        if let Err(e) = logininfor::service::add_logininfor(&db_pool, log).await {
+        if let Err(e) = logininfor::service::add_logininfor(db, log).await {
             // 这里的错误只会打印到服务器日志，不会影响主登录流程
             error!("[LOG_TASK] 记录登录日志失败: {:?}", e);
         } else {
@@ -74,7 +74,7 @@ async fn record_login_log(db_pool: PgPool, user_name: String, ipaddr: String, st
 pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extension<ConnectInfo<SocketAddr>>, Json(payload): Json<LoginRequest>) -> Result<Json<AjaxResult<LoginVo>>, AppError> {
     let ipaddr = addr.ip().to_string();
 
-    let db_pool = state.db_pool.clone();
+    let db = state.db.clone();
 
     let (user_name, password, _code, _uuid) = (
         payload.username,
@@ -96,7 +96,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
             }
             _ => {
                 record_login_log(
-                    state.db_pool.clone(),
+                    state.db.clone(),
                     user_name.clone(),
                     addr.ip().to_string(),
                     "1",
@@ -108,11 +108,11 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
         }
     }
     // 用户名密码校验
-    let db_user = match user::service::select_user_by_username(&state.db_pool, &user_name).await? {
+    let db_user = match user::service::select_user_by_username(&state.db, &user_name).await? {
         Some(u) => u,
         None => {
             error!("[LOGIN_HANDLER] 用户 '{}' 不存在.", &user_name);
-            record_login_log(db_pool, user_name, ipaddr, "1", "用户不存在".to_string()).await;
+            record_login_log(db, user_name, ipaddr, "1", "用户不存在".to_string()).await;
             return Err(AppError::InvalidCredentials);
         }
     };
@@ -128,7 +128,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
             user_name
         );
         record_login_log(
-            db_pool.clone(),
+            db.clone(),
             user_name.clone(),
             ipaddr.clone(),
             "1",
@@ -144,7 +144,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
             e, password_from_db
         );
         tokio::spawn(record_login_log(
-            db_pool.clone(),
+            db.clone(),
             user_name.clone(),
             ipaddr.clone(),
             "1",
@@ -158,7 +158,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
         .is_err()
     {
         record_login_log(
-            state.db_pool.clone(),
+            state.db.clone(),
             user_name.clone(),
             addr.ip().to_string(),
             "1",
@@ -197,14 +197,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
     info!("[LOGIN_HANDLER] 在线用户信息已存入缓存.");
 
     // --- 4. 记录成功日志并返回 ---
-    record_login_log(
-        db_pool,
-        db_user.user_name,
-        ipaddr,
-        "0",
-        "登录成功".to_string(),
-    )
-    .await;
+    record_login_log(db, db_user.user_name, ipaddr, "0", "登录成功".to_string()).await;
 
     let vo = LoginVo { token };
     info!("[LOGIN_HANDLER] 登录流程全部完成，返回 Token.");
@@ -222,7 +215,7 @@ pub async fn get_info(State(state): State<Arc<AppState>>, Extension(claims): Ext
     // 1. 查询用户基本信息
     // 即使 claims 中有部分信息，也从数据库重新查询以获取最新数据（如昵称）
     // 这里复用 user 模块的 service，而不是自己写 SQL
-    let user_detail = user::service::select_user_by_id(&state.db_pool, claims.user_id).await?;
+    let user_detail = user::service::select_user_by_id(&state.db, claims.user_id).await?;
     info!(
         "[HANDLER] Fetched user details: nick_name='{}'",
         user_detail.nick_name
@@ -230,12 +223,12 @@ pub async fn get_info(State(state): State<Arc<AppState>>, Extension(claims): Ext
 
     // 2. 查询用户的角色列表
     // 调用刚刚在 user::service 中创建的新函数
-    let roles = user::service::get_user_roles(&state.db_pool, claims.user_id).await?;
+    let roles = user::service::get_user_roles(&state.db, claims.user_id).await?;
     info!("[HANDLER] Fetched user roles, count: {}", roles.len());
 
     // 3. 查询用户的权限列表
     // 调用刚刚在 user::service 中创建的新函数
-    let permissions = user::service::get_user_permissions(&state.db_pool, claims.user_id).await?;
+    let permissions = user::service::get_user_permissions(&state.db, claims.user_id).await?;
     info!(
         "[HANDLER] Fetched user permissions, count: {}",
         permissions.len()
