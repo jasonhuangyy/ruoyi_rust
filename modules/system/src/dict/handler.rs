@@ -1,7 +1,4 @@
-use super::{
-    model::{ListDictTypeQuery, SysDictType},
-    service,
-};
+use super::{model::ListDictTypeQuery, service};
 use crate::dict::model::{AddDictDataVo, AddDictTypeVo, DictTypeOptionVo, ListDictDataQuery, UpdateDictDataVo, UpdateDictTypeVo};
 use axum::{
     extract::{Form, Path, Query, State},
@@ -9,8 +6,8 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
-use common::models::dict_model::SysDictData;
 use common::{error::AppError, page::TableDataInfo, response::AjaxResult};
+use entity::prelude::{SysDictType, SysDictTypeColumn, SysDictTypeModel};
 use framework::jwt::ClaimsData;
 use framework::state::AppState;
 use ruoyi_macros::require_permission;
@@ -18,7 +15,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 /// 获取字典类型列表 (分页)
-pub async fn list_types(State(state): State<Arc<AppState>>, Query(params): Query<ListDictTypeQuery>) -> Result<Json<TableDataInfo<SysDictType>>, AppError> {
+pub async fn list_types(State(state): State<Arc<AppState>>, Query(params): Query<ListDictTypeQuery>) -> Result<Json<TableDataInfo<SysDictTypeModel>>, AppError> {
     // RuoYi 的分页接口通常不使用 AjaxResult 包装，而是直接返回 TableDataInfo
     let list = service::select_dict_type_list(&state.db, params).await?;
     Ok(Json(list))
@@ -26,7 +23,7 @@ pub async fn list_types(State(state): State<Arc<AppState>>, Query(params): Query
 
 /// 刷新字典缓存
 pub async fn refresh_cache(State(state): State<Arc<AppState>>) -> Result<Json<AjaxResult<()>>, AppError> {
-    service::refresh_dict_cache(&state.db, &state.dict_cache).await?;
+    service::refresh_dict_cache(&state.db, &state.cache.dict_cache).await?;
     Ok(Json(AjaxResult::<()>::success_msg("刷新成功")))
 }
 
@@ -54,7 +51,7 @@ pub async fn add_type(State(state): State<Arc<AppState>>, Json(body): Json<AddDi
 
 /// 修改字典类型
 pub async fn update_type(State(state): State<Arc<AppState>>, Json(body): Json<UpdateDictTypeVo>) -> Result<Json<AjaxResult<()>>, AppError> {
-    service::update_dict_type(&state.db, body, &state.dict_cache).await?;
+    service::update_dict_type(&state.db, body, &state.cache.dict_cache).await?;
     Ok(Json(AjaxResult::<()>::success_msg("修改成功")))
 }
 
@@ -69,7 +66,7 @@ pub async fn delete_type(State(state): State<Arc<AppState>>, Path(dict_ids): Pat
 }
 
 /// 获取字典类型下拉框列表
-pub async fn get_type_option_select(State(state): State<Arc<AppState>>) -> Result<Json<AjaxResult<Vec<DictTypeOptionVo>>>, AppError> {
+pub async fn get_type_option_select(State(state): State<Arc<AppState>>) -> Result<Json<AjaxResult<Vec<SysDictTypeModel>>>, AppError> {
     let list = service::get_dict_type_option_select(&state.db).await?;
     Ok(Json(AjaxResult::success(list)))
 }
@@ -94,13 +91,13 @@ pub async fn get_data_detail(State(state): State<Arc<AppState>>, Path(dict_code)
 
 /// 新增字典数据
 pub async fn add_data(State(state): State<Arc<AppState>>, Json(body): Json<AddDictDataVo>) -> Result<Json<AjaxResult<()>>, AppError> {
-    service::add_dict_data(&state.db, body, &state.dict_cache).await?;
+    service::add_dict_data(&state.db, body, &state.cache.dict_cache).await?;
     Ok(Json(AjaxResult::<()>::success_msg("新增成功")))
 }
 
 /// 修改字典数据
 pub async fn update_data(State(state): State<Arc<AppState>>, Json(body): Json<UpdateDictDataVo>) -> Result<Json<AjaxResult<()>>, AppError> {
-    service::update_dict_data(&state.db, body, &state.dict_cache).await?;
+    service::update_dict_data(&state.db, body, &state.cache.dict_cache).await?;
     Ok(Json(AjaxResult::<()>::success_msg("修改成功")))
 }
 

@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tracing::info;
 
 pub async fn list(State(state): State<Arc<AppState>>, Query(params): Query<ListJobLogQuery>) -> Result<Json<TableDataInfo<SysJobLog>>, AppError> {
-    let list_data = service::select_job_log_list(&state.db_pool, params).await?;
+    let list_data = service::select_job_log_list(&state.db, params).await?;
     Ok(Json(list_data))
 }
 
@@ -37,7 +37,7 @@ pub async fn remove(State(state): State<Arc<AppState>>, Extension(_claims): Exte
         return Err(AppError::ValidationFailed("未提供有效的日志ID".to_string()));
     }
 
-    service::delete_job_log_by_ids(&state.db_pool, &ids).await?;
+    service::delete_job_log_by_ids(&state.db, &ids).await?;
 
     Ok(Json(AjaxResult::<()>::success_msg("删除成功")))
 }
@@ -46,7 +46,7 @@ pub async fn remove(State(state): State<Arc<AppState>>, Extension(_claims): Exte
 pub async fn clean(State(state): State<Arc<AppState>>, Extension(_claims): Extension<ClaimsData>) -> Result<Json<AjaxResult<()>>, AppError> {
     info!("[HANDLER] Entering jobLog::clean");
 
-    service::clean_job_log(&state.db_pool).await?;
+    service::clean_job_log(&state.db).await?;
 
     Ok(Json(AjaxResult::<()>::success_msg("清空成功")))
 }
@@ -58,7 +58,7 @@ pub async fn export(State(state): State<Arc<AppState>>, Extension(_claims): Exte
         params
     );
 
-    let excel_data = service::export_job_log_list(&state.db_pool, params).await?;
+    let excel_data = service::export_job_log_list(&state.db, params).await?;
 
     let filename = format!(
         "job_log_{}.xlsx",

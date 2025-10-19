@@ -1,5 +1,5 @@
 use super::{
-    model::{AddConfigVo, ListConfigQuery, SysConfig, UpdateConfigVo},
+    model::{AddConfigVo, ListConfigQuery, UpdateConfigVo},
     service,
 };
 use axum::{
@@ -10,6 +10,7 @@ use axum::{
     Json,
 };
 use common::{auth::Permission, error::AppError, page::TableDataInfo, response::AjaxResult};
+use entity::prelude::*;
 use framework::{jwt::ClaimsData, state::AppState};
 use ruoyi_macros::require_permission;
 use serde_json::json;
@@ -18,7 +19,7 @@ use std::sync::Arc;
 /// 获取参数配置列表 (分页)
 // #[require_permission("system:config:list")]
 #[require_permission(Permission::ConfigList)]
-pub async fn list(State(state): State<Arc<AppState>>, Extension(_claims): Extension<ClaimsData>, Query(params): Query<ListConfigQuery>) -> Result<Json<TableDataInfo<SysConfig>>, AppError> {
+pub async fn list(State(state): State<Arc<AppState>>, Extension(_claims): Extension<ClaimsData>, Query(params): Query<ListConfigQuery>) -> Result<Json<TableDataInfo<SysConfigModel>>, AppError> {
     let list_data = service::select_config_list(&state.db, params).await?;
 
     Ok(Json(list_data))

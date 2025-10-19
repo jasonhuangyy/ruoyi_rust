@@ -1,5 +1,5 @@
 use super::{
-    model::{AddJobVo, ChangeStatusVo, ListJobQuery, SysJob, UpdateJobVo},
+    model::{AddJobVo, ChangeStatusVo, ListJobQuery, UpdateJobVo},
     service,
 };
 use axum::{
@@ -9,6 +9,7 @@ use axum::{
     Extension, Json,
 };
 use common::{error::AppError, page::TableDataInfo, response::AjaxResult};
+use entity::prelude::SysJobModel;
 use framework::jwt::ClaimsData;
 use framework::state::AppState;
 use ruoyi_macros::require_permission;
@@ -18,7 +19,7 @@ use tracing::info;
 
 /// 获取定时任务列表 (分页)
 #[axum::debug_handler]
-pub async fn list(State(state): State<Arc<AppState>>, Query(params): Query<ListJobQuery>) -> Result<Json<TableDataInfo<SysJob>>, AppError> {
+pub async fn list(State(state): State<Arc<AppState>>, Query(params): Query<ListJobQuery>) -> Result<Json<TableDataInfo<SysJobModel>>, AppError> {
     info!("[HANDLER] Entering job::list with params: {:?}", params);
     let list_data = service::select_job_list(&state.db, params).await?;
     Ok(Json(list_data))

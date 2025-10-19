@@ -1,10 +1,13 @@
-use super::model::{AddJobVo, ChangeStatusVo, ListJobQuery, SysJob, UpdateJobVo};
+use super::model::{AddJobVo, ChangeStatusVo, ListJobQuery, UpdateJobVo};
 use crate::job::task_drop_pending_file::cleanup_expired_pending_files;
 use crate::logininfor;
 use common::{error::AppError, page::TableDataInfo};
+use entity::prelude::*;
 use framework::state::AppState;
 use rust_xlsxwriter::Workbook;
-use sqlx::PgPool;
+use sea_orm::ActiveValue::{NotSet, Set};
+use sea_orm::IntoActiveModel;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use sqlx::Postgres;
 use sqlx::QueryBuilder;
 use std::str::ParseBoolError;
@@ -13,11 +16,13 @@ use tokio_cron_scheduler::Job;
 use tracing::{debug, error, info, instrument, warn};
 
 /// 查询定时任务列表（分页）
-pub async fn select_job_list(db: &PgPool, params: ListJobQuery) -> Result<TableDataInfo<SysJob>, AppError> {
+pub async fn select_job_list(conn: &DatabaseConnection, params: ListJobQuery) -> Result<TableDataInfo<SysJobModel>, AppError> {
     info!(
         "[SERVICE] Entering job::select_job_list with params: {:?}",
         params
     );
+
+    let db = conn.get_postgres_connection_pool();
 
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_job WHERE 1=1");
     let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) FROM sys_job WHERE 1=1");
@@ -63,29 +68,39 @@ pub async fn select_job_list(db: &PgPool, params: ListJobQuery) -> Result<TableD
         .push(" OFFSET ")
         .push_bind(offset);
 
-    let rows: Vec<SysJob> = query_builder.build_query_as().fetch_all(db).await?;
+    let rows: Vec<SysJobModel> = query_builder.build_query_as().fetch_all(db).await?;
     info!(
         "[DB_RESULT] Found {} jobs for the current page.",
         rows.len()
     );
-
     Ok(TableDataInfo::new(rows, total))
 }
 
 /// 根据ID查询任务详情
-pub async fn select_job_by_id(db: &PgPool, job_id: i64) -> Result<SysJob, AppError> {
+pub async fn select_job_by_id(conn: &DatabaseConnection, job_id: i64) -> Result<SysJobModel, AppError> {
     info!(
         "[SERVICE] Entering job::select_job_by_id for id: {}",
         job_id
     );
-    sqlx::query_as!(SysJob, "SELECT * FROM sys_job WHERE job_id = ?", job_id)
-        .fetch_one(db)
+    // let db = conn.get_postgres_connection_pool();
+    // sqlx::query_as!(SysJob, "SELECT * FROM sys_job WHERE job_id = ?", job_id)
+    //     .fetch_one(db)
+    //     .await
+    //     .map_err(AppError::from)
+    let dto: Option<SysJobModel> = SysJob::find()
+        .filter(SysJobColumn::JobId.eq(job_id))
+        .one(conn)
         .await
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+    dto.ok_or_else(|| {
+        let msg = format!("任务ID: {} 不存在", job_id);
+        error!("{}", msg);
+        AppError::RecordNotFound
+    })
 }
 
 // ======================= 调度器交互服务 =======================
-async fn add_job_to_scheduler(job: &SysJob, state: &Arc<AppState>) -> Result<(), AppError> {
+async fn add_job_to_scheduler(job: &SysJobModel, state: &Arc<AppState>) -> Result<(), AppError> {
     info!(
         "[SCHEDULER] Attempting to add job_id '{}' to scheduler.",
         job.job_id
@@ -94,21 +109,12 @@ async fn add_job_to_scheduler(job: &SysJob, state: &Arc<AppState>) -> Result<(),
     let cron_expr = job.cron_expression.as_deref().ok_or_else(|| {
         let msg = format!(
             "任务 '{}' (ID: {}) 缺少Cron表达式",
-            job.job_name.as_deref().unwrap_or("未知"),
-            job.job_id
+            job.job_name, job.job_id
         );
         error!("{}", msg);
         AppError::ValidationFailed(msg)
     })?;
-    let invoke_target = job.invoke_target.clone().ok_or_else(|| {
-        let msg = format!(
-            "任务 '{}' (ID: {}) 缺少调用目标",
-            job.job_name.as_deref().unwrap_or("未知"),
-            job.job_id
-        );
-        error!("{}", msg);
-        AppError::ValidationFailed(msg)
-    })?;
+    let invoke_target = job.invoke_target.clone();
 
     let state_clone = state.clone();
 
@@ -187,27 +193,30 @@ async fn remove_job_from_scheduler(job_id: i64, state: &Arc<AppState>) -> Result
 /// 新增任务（DB + Scheduler）
 pub async fn add_job(state: Arc<AppState>, vo: AddJobVo) -> Result<(), AppError> {
     info!("[SERVICE] Entering job::add_job with vo: {:?}", vo);
-    let mut tx = state.db.begin().await?;
+    let db = state.db.get_postgres_connection_pool();
+    let mut tx = db.begin().await?;
 
-    let result = sqlx::query!(
-        "INSERT INTO app.sys_job (job_name, job_group, invoke_target, cron_expression, misfire_policy, concurrent, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())",
-        vo.job_name,
-        vo.job_group,
-        vo.invoke_target,
-        vo.cron_expression,
-        vo.misfire_policy,
-        vo.concurrent,
-        vo.status,
-        vo.remark
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    let job_id = result.last_insert_id() as i64;
+    // let result = sqlx::query!(
+    //     "INSERT INTO sys_job (job_name, job_group, invoke_target, cron_expression, misfire_policy, concurrent, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())",
+    //     vo.job_name,
+    //     vo.job_group,
+    //     vo.invoke_target,
+    //     vo.cron_expression,
+    //     vo.misfire_policy,
+    //     vo.concurrent,
+    //     vo.status,
+    //     vo.remark
+    // )
+    // .execute(&mut *tx)
+    // .await?;
+    let model: SysJobModel = vo.into();
+    let mut active_model = model.into_active_model();
+    active_model.job_id = NotSet;
+    active_model.create_time = NotSet;
+    active_model.update_time = NotSet;
+    let new_job: SysJobModel = active_model.insert(&state.db).await?;
 
     tx.commit().await?;
-
-    let new_job = select_job_by_id(&state.db, job_id).await?;
 
     if new_job.status.as_deref() == Some("0") {
         add_job_to_scheduler(&new_job, &state).await?;
@@ -215,7 +224,7 @@ pub async fn add_job(state: Arc<AppState>, vo: AddJobVo) -> Result<(), AppError>
 
     info!(
         "[SERVICE] Successfully added job_id '{}' to DB and scheduler.",
-        job_id
+        new_job.job_id
     );
     Ok(())
 }
@@ -226,22 +235,38 @@ pub async fn update_job(state: Arc<AppState>, vo: UpdateJobVo) -> Result<(), App
 
     remove_job_from_scheduler(vo.job_id, &state).await?;
 
-    sqlx::query!(
-        "UPDATE app.sys_job SET job_name=?, job_group=?, invoke_target=?, cron_expression=?, misfire_policy=?, concurrent=?, status=?, remark=?, update_by='admin', update_time=NOW() WHERE job_id=?",
-        vo.job_name,
-        vo.job_group,
-        vo.invoke_target,
-        vo.cron_expression,
-        vo.misfire_policy,
-        vo.concurrent,
-        vo.status,
-        vo.remark,
-        vo.job_id
-    )
-    .execute(&state.db)
-    .await?;
+    let exist: SysJobModel = select_job_by_id(&state.db, vo.job_id).await?;
+    let mut model = exist.into_active_model();
+    model.job_name = Set(vo.job_name);
+    model.job_group = Set(vo.job_group);
+    model.invoke_target = Set(vo.invoke_target);
+    model.cron_expression = Set(vo.cron_expression);
+    model.misfire_policy = Set(Some(vo.misfire_policy));
+    model.concurrent = Set(Some(vo.concurrent));
+    model.status = Set(Some(vo.status));
+    model.remark = Set(vo.remark);
+    model.update_by = Set(Some("admin".to_string()));
+    model.update_time = NotSet;
 
-    let updated_job = select_job_by_id(&state.db, vo.job_id).await?;
+    // let pool = state.db.get_postgres_connection_pool();
+
+    // sqlx::query!(
+    //     "UPDATE sys_job SET job_name=?, job_group=?, invoke_target=?, cron_expression=?, misfire_policy=?, concurrent=?, status=?, remark=?, update_by='admin', update_time=NOW() WHERE job_id=?",
+    //     vo.job_name,
+    //     vo.job_group,
+    //     vo.invoke_target,
+    //     vo.cron_expression,
+    //     vo.misfire_policy,
+    //     vo.concurrent,
+    //     vo.status,
+    //     vo.remark,
+    //     vo.job_id
+    // )
+    // .execute(pool)
+    // .await?;
+    let updated_job = model.update(&state.db).await?;
+
+    // let updated_job = select_job_by_id(&state.db, vo.job_id).await?;
 
     if updated_job.status.as_deref() == Some("0") {
         add_job_to_scheduler(&updated_job, &state).await?;
@@ -260,9 +285,10 @@ pub async fn delete_job_by_ids(state: Arc<AppState>, job_ids: &[i64]) -> Result<
         "[SERVICE] Entering job::delete_job_by_ids with ids: {:?}",
         job_ids
     );
-    let mut tx = state.db.begin().await?;
+    let pool = state.db.get_postgres_connection_pool();
+    let mut tx = pool.begin().await?;
     let params = job_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!("DELETE FROM app.sys_job WHERE job_id IN ({})", params);
+    let sql = format!("DELETE FROM sys_job WHERE job_id IN ({})", params);
 
     let mut query = sqlx::query(&sql);
     for id in job_ids {
@@ -290,13 +316,11 @@ pub async fn change_job_status(state: Arc<AppState>, vo: ChangeStatusVo) -> Resu
         vo
     );
 
-    sqlx::query!(
-        "UPDATE app.sys_job SET status = ? WHERE job_id = ?",
-        vo.status,
-        vo.job_id
-    )
-    .execute(&state.db)
-    .await?;
+    sqlx::query("UPDATE sys_job SET status = ? WHERE job_id = ?")
+        .bind(vo.status.clone())
+        .bind(vo.job_id.clone())
+        .execute(state.db.get_postgres_connection_pool())
+        .await?;
 
     let job = select_job_by_id(&state.db, vo.job_id).await?;
 
@@ -314,12 +338,7 @@ pub async fn run_job_once(state: Arc<AppState>, job_id: i64) -> Result<(), AppEr
     info!("[SERVICE] Entering job::run_job_once for id: {}", job_id);
     let job = select_job_by_id(&state.db, job_id).await?;
 
-    let invoke_target = job.invoke_target.ok_or_else(|| {
-        let msg = format!("无法立即执行任务 (ID: {}): 调用目标为空", job_id);
-        error!("{}", msg);
-        AppError::ValidationFailed(msg)
-    })?;
-
+    let invoke_target = job.invoke_target;
     let state_clone = state.clone();
     tokio::spawn(async move {
         execute_task(state_clone, invoke_target).await;
@@ -330,8 +349,13 @@ pub async fn run_job_once(state: Arc<AppState>, job_id: i64) -> Result<(), AppEr
 /// 应用启动时，初始化所有定时任务
 pub async fn init_scheduler(state: Arc<AppState>) -> Result<(), AppError> {
     info!("[INIT] Initializing job scheduler...");
-    let jobs: Vec<SysJob> = sqlx::query_as("SELECT * FROM sys_job WHERE status = '0'")
-        .fetch_all(&state.db)
+    // let jobs: Vec<SysJob> = sqlx::query_as("SELECT * FROM sys_job WHERE status = '0'")
+    //     .fetch_all(state.db.get_postgres_connection_pool())
+    //     .await?;
+
+    let jobs: Vec<SysJobModel> = SysJob::find()
+        .filter(SysJobColumn::Status.eq("0"))
+        .all(&state.db)
         .await?;
 
     info!(
@@ -449,7 +473,7 @@ async fn execute_task(state: Arc<AppState>, invoke_target: String) {
             // 状态: 0 (正常)
             "ryTask.cleanPendingFiles" => {
                 info!("--- Task [cleanPendingFiles] started ---");
-                match cleanup_expired_pending_files(&state.db).await {
+                match cleanup_expired_pending_files(state.db.get_postgres_connection_pool()).await {
                     Ok(count) => info!("Successfully cleaned up {} pending files.", count),
                     Err(e) => error!("Failed to clean up pending files: {:?}", e),
                 }
@@ -483,12 +507,12 @@ async fn execute_task(state: Arc<AppState>, invoke_target: String) {
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_job_list(db: &PgPool, params: ListJobQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_job_list(db: &DatabaseConnection, params: ListJobQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting job list export with params: {:?}",
         params
     );
-    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM app.sys_job WHERE 1=1");
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_job WHERE 1=1");
 
     if let Some(name) = params.job_name {
         if !name.trim().is_empty() {
@@ -509,7 +533,10 @@ pub async fn export_job_list(db: &PgPool, params: ListJobQuery) -> Result<Vec<u8
     }
     query_builder.push(" ORDER BY job_id DESC");
 
-    let jobs: Vec<SysJob> = query_builder.build_query_as().fetch_all(db).await?;
+    let jobs: Vec<SysJobModel> = query_builder
+        .build_query_as()
+        .fetch_all(db.get_postgres_connection_pool())
+        .await?;
     info!("[DB_RESULT] Fetched {} jobs for export.", jobs.len());
 
     let mut workbook = Workbook::new();
@@ -533,16 +560,16 @@ pub async fn export_job_list(db: &PgPool, params: ListJobQuery) -> Result<Vec<u8
         } else {
             "暂停"
         };
-        let group_str = match job.job_group.as_deref() {
-            Some("DEFAULT") => "默认",
-            Some("SYSTEM") => "系统",
+        let group_str = match job.job_group.as_str() {
+            "DEFAULT" => "默认",
+            "SYSTEM" => "系统",
             _ => "未知",
         };
 
         worksheet.write(row, 0, job.job_id)?;
-        worksheet.write(row, 1, job.job_name.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 1, job.job_name.as_str())?;
         worksheet.write(row, 2, group_str)?;
-        worksheet.write(row, 3, job.invoke_target.as_deref().unwrap_or(""))?;
+        worksheet.write(row, 3, job.invoke_target.as_str())?;
         worksheet.write(row, 4, job.cron_expression.as_deref().unwrap_or(""))?;
         worksheet.write(row, 5, status_str)?;
     }

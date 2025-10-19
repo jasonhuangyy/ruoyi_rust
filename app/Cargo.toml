@@ -23,3 +23,4 @@ moka = { workspace = true }
 # argon2 用于密码哈希验证
 argon2 = {workspace = true}
 tokio-cron-scheduler = {workspace = true}
+dotenvy = "0.15.7"

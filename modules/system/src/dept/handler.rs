@@ -1,5 +1,5 @@
 use super::{
-    model::{AddDeptVo, ListDeptQuery, SysDept, UpdateDeptVo},
+    model::{AddDeptVo, ListDeptQuery, UpdateDeptVo},
     service,
 };
 use crate::dept::model::DeptTreeSelectVo;
@@ -9,6 +9,7 @@ use axum::{
     Json,
 };
 use common::{error::AppError, response::AjaxResult};
+use entity::prelude::SysDeptModel;
 use framework::state::AppState;
 use serde_json::json;
 use std::sync::Arc;
@@ -22,7 +23,7 @@ use tracing::info;
 /// 并从 `response.data` 中获取数组。
 /// 返回值类型从 `Json<Vec<SysDept>>` 改为 `Json<AjaxResult<Vec<SysDept>>>`，
 /// 并使用 `AjaxResult::success()` 对结果进行包装。
-pub async fn list(State(state): State<Arc<AppState>>, Query(params): Query<ListDeptQuery>) -> Result<Json<AjaxResult<Vec<SysDept>>>, AppError> {
+pub async fn list(State(state): State<Arc<AppState>>, Query(params): Query<ListDeptQuery>) -> Result<Json<AjaxResult<Vec<SysDeptModel>>>, AppError> {
     info!("[HANDLER] Entering dept::list with params: {:?}", params);
 
     // 调用 service 获取扁平列表，这部分逻辑不变
@@ -102,7 +103,7 @@ pub async fn treeselect(State(state): State<Arc<AppState>>) -> Result<Json<AjaxR
 pub async fn list_exclude_child(
     State(state): State<Arc<AppState>>,
     Path(dept_id): Path<i64>, // 从路径中获取要排除的部门ID
-) -> Result<Json<AjaxResult<Vec<SysDept>>>, AppError> {
+) -> Result<Json<AjaxResult<Vec<SysDeptModel>>>, AppError> {
     info!(
         "[HANDLER] Entering dept::list_exclude_child for dept_id: {}",
         dept_id

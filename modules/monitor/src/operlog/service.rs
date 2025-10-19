@@ -1,8 +1,10 @@
 use super::model::{ListOperLogQuery, SysOperLog};
 use common::error::AppError;
 use common::page::TableDataInfo;
+use entity::prelude::SysOperLogModel;
 use rust_xlsxwriter::Workbook;
-use sqlx::{PgPool, Postgres, QueryBuilder};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, IntoActiveModel};
+use sqlx::{Postgres, QueryBuilder};
 use tracing::{info, instrument};
 
 /// 新增一条操作日志记录
@@ -10,41 +12,42 @@ use tracing::{info, instrument};
 /// # 异步说明
 /// 这个函数将被设计为在后台任务中调用 (`tokio::spawn`)，
 /// 以避免阻塞主请求的响应。
-pub async fn add_oper_log(db: &PgPool, log: SysOperLog) -> Result<(), AppError> {
+pub async fn add_oper_log(db: &DatabaseConnection, log: SysOperLogModel) -> Result<(), AppError> {
     info!("[SERVICE] Preparing to add operation log: {:?}", log.title);
 
     // --- 数据库插入逻辑将在这里实现 ---
-    sqlx::query!(
-        r#"
-        INSERT INTO sys_oper_log (title, business_type, method, request_method, operator_type, oper_name, dept_name, oper_url, oper_ip, oper_location, oper_param, json_result, status, error_msg, oper_time, cost_time)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        "#,
-        log.title,
-        log.business_type,
-        log.method,
-        log.request_method,
-        log.operator_type,
-        log.oper_name,
-        log.dept_name,
-        log.oper_url,
-        log.oper_ip,
-        log.oper_location,
-        log.oper_param,
-        log.json_result,
-        log.status,
-        log.error_msg,
-        log.oper_time, // `chrono::NaiveDateTime`可以直接被sqlx使用
-        log.cost_time,
-    )
-    .execute(db)
-    .await?;
+    // sqlx::query!(
+    //     r#"
+    //     INSERT INTO sys_oper_log (title, business_type, method, request_method, operator_type, oper_name, dept_name, oper_url, oper_ip, oper_location, oper_param, json_result, status, error_msg, oper_time, cost_time)
+    //     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    //     "#,
+    //     log.title,
+    //     log.business_type,
+    //     log.method,
+    //     log.request_method,
+    //     log.operator_type,
+    //     log.oper_name,
+    //     log.dept_name,
+    //     log.oper_url,
+    //     log.oper_ip,
+    //     log.oper_location,
+    //     log.oper_param,
+    //     log.json_result,
+    //     log.status,
+    //     log.error_msg,
+    //     log.oper_time, // `chrono::NaiveDateTime`可以直接被sqlx使用
+    //     log.cost_time,
+    // )
+    // .execute(db.get_postgres_connection_pool())
+    // .await?;
+    log.into_active_model().insert(db).await?;
 
     info!("[SERVICE] Operation log added successfully.");
     Ok(())
 }
 
 /// 查询操作日志列表（分页）
-pub async fn select_oper_log_list(db: &PgPool, params: ListOperLogQuery) -> Result<TableDataInfo<SysOperLog>, AppError> {
+pub async fn select_oper_log_list(db: &DatabaseConnection, params: ListOperLogQuery) -> Result<TableDataInfo<SysOperLog>, AppError> {
     info!(
         "[SERVICE] Entering select_oper_log_list with params: {:?}",
         params
@@ -134,7 +137,10 @@ pub async fn select_oper_log_list(db: &PgPool, params: ListOperLogQuery) -> Resu
         }
     }
 
-    let total: (i64,) = count_builder.build_query_as().fetch_one(db).await?;
+    let total: (i64,) = count_builder
+        .build_query_as()
+        .fetch_one(db.get_postgres_connection_pool())
+        .await?;
 
     let page_num = params.page_num.unwrap_or(1);
     let page_size = params.page_size.unwrap_or(10);
@@ -147,7 +153,10 @@ pub async fn select_oper_log_list(db: &PgPool, params: ListOperLogQuery) -> Resu
         .push_bind(offset);
 
     info!("[DB_QUERY] Executing parameterized query for operlog list.");
-    let rows: Vec<SysOperLog> = query_builder.build_query_as().fetch_all(db).await?;
+    let rows: Vec<SysOperLog> = query_builder
+        .build_query_as()
+        .fetch_all(db.get_postgres_connection_pool())
+        .await?;
     info!(
         "[DB_RESULT] Found {} operlogs for the current page.",
         rows.len()
@@ -157,7 +166,7 @@ pub async fn select_oper_log_list(db: &PgPool, params: ListOperLogQuery) -> Resu
 }
 
 /// 批量删除操作日志
-pub async fn delete_oper_log_by_ids(db: &PgPool, oper_ids: &[i64]) -> Result<u64, AppError> {
+pub async fn delete_oper_log_by_ids(db: &DatabaseConnection, oper_ids: &[i64]) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering delete_oper_log_by_ids with ids: {:?}",
         oper_ids
@@ -170,23 +179,23 @@ pub async fn delete_oper_log_by_ids(db: &PgPool, oper_ids: &[i64]) -> Result<u64
         query = query.bind(id);
     }
 
-    let result = query.execute(db).await?;
+    let result = query.execute(db.get_postgres_connection_pool()).await?;
     info!("[DB_RESULT] Deleted {} operlogs.", result.rows_affected());
     Ok(result.rows_affected())
 }
 
 /// 清空所有操作日志
-pub async fn clean_oper_log(db: &PgPool) -> Result<u64, AppError> {
+pub async fn clean_oper_log(db: &DatabaseConnection) -> Result<u64, AppError> {
     info!("[SERVICE] Entering clean_oper_log");
     let result = sqlx::query("TRUNCATE TABLE sys_oper_log")
-        .execute(db)
+        .execute(db.get_postgres_connection_pool())
         .await?;
     info!("[DB_RESULT] Truncated sys_oper_log table.");
     Ok(result.rows_affected())
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_oper_log_list(db: &PgPool, params: ListOperLogQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_oper_log_list(db: &DatabaseConnection, params: ListOperLogQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting oper log list export with params: {:?}",
         params
@@ -234,7 +243,10 @@ pub async fn export_oper_log_list(db: &PgPool, params: ListOperLogQuery) -> Resu
     }
     query_builder.push(" ORDER BY oper_time DESC");
 
-    let oper_logs: Vec<SysOperLog> = query_builder.build_query_as().fetch_all(db).await?;
+    let oper_logs: Vec<SysOperLog> = query_builder
+        .build_query_as()
+        .fetch_all(db.get_postgres_connection_pool())
+        .await?;
 
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet();

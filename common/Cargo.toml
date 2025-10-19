@@ -9,13 +9,15 @@ axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 config = { workspace = true }
-sqlx = {workspace = true}
-chrono = { workspace = true}
-tracing = { workspace = true}
-zip = {workspace = true}
+sqlx = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+zip = { workspace = true }
+sea-orm = { workspace = true }
 
-strum = { version = "0.26", features = ["derive"] }
-strum_macros = "0.26"
+strum = { version = "0.27.2", features = ["derive"] }
+strum_macros = "0.27.2"
 async-trait = "0.1.88"
 
 rust_xlsxwriter = { workspace = true }
+thiserror = "2.0.16"

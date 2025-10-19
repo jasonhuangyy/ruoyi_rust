@@ -1,13 +1,13 @@
-use std::fmt;
 use crate::response::AjaxResult;
+use axum::extract::multipart::MultipartError;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
-use axum::extract::multipart::MultipartError;
 use config::ConfigError;
-use rust_xlsxwriter::XlsxError; 
+use rust_xlsxwriter::XlsxError;
+use std::fmt;
 use tracing::error;
 
 /// 应用错误枚举，定义了不同类型的错误
@@ -15,6 +15,7 @@ use tracing::error;
 pub enum AppError {
     // 系统级/不可预见的错误 (应返回 500)
     DatabaseError(sqlx::Error),
+    SeaOrmDbError(sea_orm::error::DbErr),
     ConfigError(ConfigError),
     PasswordHashError(String),
     JwtError,
@@ -51,11 +52,31 @@ impl IntoResponse for AppError {
         // 1. 根据错误类型，映射到 (HTTP状态码, 业务码, 消息)
         let (http_status, business_code, message) = match self {
             // 系统级错误 -> 500
-            AppError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, 500, "服务器内部错误".to_string()),
-            AppError::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, 500, "服务器配置错误".to_string()),
-            AppError::PasswordHashError(_) => (StatusCode::INTERNAL_SERVER_ERROR, 500, "密码处理异常".to_string()),
-            AppError::JwtError => (StatusCode::INTERNAL_SERVER_ERROR, 500, "令牌处理异常".to_string()),
-            AppError::JobSchedulerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, 500, format!("定时任务调度失败: {}", msg)),
+            AppError::DatabaseError(_) | AppError::SeaOrmDbError(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                500,
+                "服务器内部错误".to_string(),
+            ),
+            AppError::ConfigError(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                500,
+                "服务器配置错误".to_string(),
+            ),
+            AppError::PasswordHashError(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                500,
+                "密码处理异常".to_string(),
+            ),
+            AppError::JwtError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                500,
+                "令牌处理异常".to_string(),
+            ),
+            AppError::JobSchedulerError(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                500,
+                format!("定时任务调度失败: {}", msg),
+            ),
             // 业务逻辑错误 -> 400 Bad Request
             // 前端将通过检查 HTTP 状态码是否为 400/422 来识别这些错误
             AppError::HardwareAuthFailed(msg) => (StatusCode::BAD_REQUEST, 500, msg),
@@ -67,7 +88,11 @@ impl IntoResponse for AppError {
             AppError::ValidationFailed(msg) => (StatusCode::BAD_REQUEST, 400, msg),
 
             // 认证/授权错误
-            AppError::TokenInvalid => (StatusCode::UNAUTHORIZED, 401, "令牌无效或已过期".to_string()),
+            AppError::TokenInvalid => (
+                StatusCode::UNAUTHORIZED,
+                401,
+                "令牌无效或已过期".to_string(),
+            ),
             AppError::PermissionDenied => (StatusCode::FORBIDDEN, 403, "权限不足".to_string()),
 
             AppError::JsonParseError(e) => (StatusCode::BAD_REQUEST, 400, format!("JSON格式错误: {}", e)),
@@ -86,10 +111,11 @@ impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AppError::DatabaseError(e) => write!(f, "Database Error: {}", e),
+            AppError::SeaOrmDbError(e) => write!(f, "Database Error: {}", e),
             AppError::ConfigError(e) => write!(f, "Configuration Error: {}", e),
             AppError::PasswordHashError(d) => write!(f, "Password Hashing Error: {}", d),
             AppError::JwtError => write!(f, "JWT Generation/Verification Error"),
-            AppError::JobSchedulerError(m) => write!(f, "Job Scheduler Error: {}",m),
+            AppError::JobSchedulerError(m) => write!(f, "Job Scheduler Error: {}", m),
             AppError::HardwareAuthFailed(m) => write!(f, "Hardware Auth Failed: {}", m),
             AppError::SsoAuthFailed(m) => write!(f, "SSO Auth Failed: {}", m),
             AppError::InvalidCredentials => write!(f, "Invalid Credentials"),
@@ -111,6 +137,12 @@ impl From<sqlx::Error> for AppError {
     }
 }
 
+impl From<sea_orm::error::DbErr> for AppError {
+    fn from(err: sea_orm::error::DbErr) -> Self {
+        AppError::SeaOrmDbError(err)
+    }
+}
+
 impl From<ConfigError> for AppError {
     fn from(err: ConfigError) -> Self {
         AppError::ConfigError(err)
@@ -122,7 +154,6 @@ impl From<serde_json::Error> for AppError {
         AppError::JsonParseError(err)
     }
 }
-
 
 impl From<XlsxError> for AppError {
     fn from(err: XlsxError) -> Self {
@@ -139,4 +170,3 @@ impl From<MultipartError> for AppError {
         AppError::ValidationFailed("文件上传失败，请检查文件格式或大小。".to_string())
     }
 }
- 

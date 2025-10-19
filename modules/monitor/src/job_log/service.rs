@@ -1,11 +1,12 @@
 use super::model::{ListJobLogQuery, SysJobLog};
 use common::{error::AppError, page::TableDataInfo};
 use rust_xlsxwriter::Workbook;
-use sqlx::{PgPool, Postgres, QueryBuilder};
+use sea_orm::DatabaseConnection;
+use sqlx::{Postgres, QueryBuilder};
 use tracing::{info, instrument};
 
 #[instrument(skip(db, ids))]
-pub async fn delete_job_log_by_ids(db: &PgPool, ids: &[i64]) -> Result<u64, AppError> {
+pub async fn delete_job_log_by_ids(db: &DatabaseConnection, ids: &[i64]) -> Result<u64, AppError> {
     info!("[SERVICE] Deleting job logs with IDs: {:?}", ids);
 
     if ids.is_empty() {
@@ -19,7 +20,10 @@ pub async fn delete_job_log_by_ids(db: &PgPool, ids: &[i64]) -> Result<u64, AppE
     }
     separated.push_unseparated(")");
 
-    let result = query_builder.build().execute(db).await?;
+    let result = query_builder
+        .build()
+        .execute(db.get_postgres_connection_pool())
+        .await?;
     let affected_rows = result.rows_affected();
     info!("[DB_RESULT] Deleted {} job logs.", affected_rows);
 
@@ -27,20 +31,21 @@ pub async fn delete_job_log_by_ids(db: &PgPool, ids: &[i64]) -> Result<u64, AppE
 }
 
 #[instrument(skip(db))]
-pub async fn clean_job_log(db: &PgPool) -> Result<(), AppError> {
+pub async fn clean_job_log(db: &DatabaseConnection) -> Result<(), AppError> {
     info!("[SERVICE] Cleaning all job logs.");
 
     sqlx::query("TRUNCATE TABLE sys_job_log")
-        .execute(db)
+        .execute(db.get_postgres_connection_pool())
         .await?;
 
     info!("[DB_RESULT] sys_job_log table has been truncated.");
     Ok(())
 }
 
-pub async fn select_job_log_list(db: &PgPool, params: ListJobLogQuery) -> Result<TableDataInfo<SysJobLog>, AppError> {
+pub async fn select_job_log_list(db: &DatabaseConnection, params: ListJobLogQuery) -> Result<TableDataInfo<SysJobLog>, AppError> {
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_job_log WHERE 1=1");
     let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) FROM sys_job_log WHERE 1=1");
+    let db = db.get_postgres_connection_pool();
 
     if let Some(name) = params.job_name {
         if !name.trim().is_empty() {
@@ -87,7 +92,7 @@ pub async fn select_job_log_list(db: &PgPool, params: ListJobLogQuery) -> Result
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_job_log_list(db: &PgPool, params: ListJobLogQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_job_log_list(db: &DatabaseConnection, params: ListJobLogQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting job log list export with params: {:?}",
         params
@@ -104,7 +109,10 @@ pub async fn export_job_log_list(db: &PgPool, params: ListJobLogQuery) -> Result
     }
     query_builder.push(" ORDER BY create_time DESC");
 
-    let logs: Vec<SysJobLog> = query_builder.build_query_as().fetch_all(db).await?;
+    let logs: Vec<SysJobLog> = query_builder
+        .build_query_as()
+        .fetch_all(db.get_postgres_connection_pool())
+        .await?;
     info!("[DB_RESULT] Fetched {} job logs for export.", logs.len());
 
     let mut workbook = Workbook::new();

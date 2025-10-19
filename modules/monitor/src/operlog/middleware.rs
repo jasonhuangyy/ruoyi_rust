@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::Local;
+use entity::prelude::SysOperLogModel;
 use futures_util::future::BoxFuture;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use tokio;
 use tower::{Layer, Service};
 use tracing::{error, info};
 
-use super::{extractor::LogInfo, model::SysOperLog, service as operlog_service};
+use super::{extractor::LogInfo, service as operlog_service};
 use framework::{jwt::ClaimsData, state::AppState};
 
 /// 一个自定义的层，用于包裹所有受保护的路由，以实现操作日志记录
@@ -119,7 +120,7 @@ where
                 };
 
                 // 构建日志实体
-                let log = SysOperLog {
+                let log = SysOperLogModel {
                     oper_id: 0,
                     title: Some(log_info.title.clone()),
                     business_type: Some(log_info.business_type.into()),

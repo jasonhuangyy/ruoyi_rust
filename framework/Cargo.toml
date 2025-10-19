@@ -5,11 +5,12 @@ edition = "2024"
 
 [dependencies]
 common = { path = "../common" }
+entity = { path = "../entity" }
 serde = { workspace = true }
 config = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-tracing-appender = {workspace = true}
+tracing-appender = { workspace = true }
 sqlx = { workspace = true }
 serde_json = { workspace = true }
 axum = { workspace = true }
@@ -18,9 +19,10 @@ jwt-simple = { workspace = true }
 # 缓存库
 moka = { workspace = true }
 uuid = { version = "1.17.0", features = ["v4"] }
-tokio-cron-scheduler = {workspace = true}
-tokio =  { workspace = true }
-chrono = {workspace = true}
+tokio-cron-scheduler = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
 sea-orm = { workspace = true }
-envy = { workspace = true }
+envy.workspace = true
 log = { workspace = true }
+dotenvy = "0.15.7"

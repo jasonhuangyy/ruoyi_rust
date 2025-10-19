@@ -1,8 +1,7 @@
 use crate::error::AppError;
-use sqlx::PgPool;
+use sea_orm::DatabaseConnection;
 use strum::{AsRefStr, EnumString};
 use tracing::info;
-
 /// # 系统权限枚举
 ///
 /// 定义了系统中所有可用的API权限点。
@@ -106,13 +105,15 @@ pub enum Permission {
 ///
 /// # Returns
 /// 一个包含权限标识字符串的向量 `Vec<String>`
-pub async fn get_user_permissions(db: &PgPool, user_id: i64) -> Result<Vec<String>, AppError> {
+pub async fn get_user_permissions(db: &DatabaseConnection, user_id: i64) -> Result<Vec<String>, AppError> {
     info!(
         "[SERVICE] Entering get_user_permissions for user_id: {}",
         user_id
     );
     info!("[SERVICE_PERM_DEBUG] 准备查询用户 {} 的权限...", user_id); // ★ 调试日志1
     let perms: Vec<String>;
+
+    let db = db.get_postgres_connection_pool();
 
     // RuoYi 的逻辑：如果是管理员(user_id=1)，拥有所有权限
     if user_id == 1 {

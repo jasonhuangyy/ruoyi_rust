@@ -3,12 +3,14 @@
 use super::model::{AddPostVo, ListPostQuery, PostOptionVo, SysPost, UpdatePostVo};
 use common::{error::AppError, page::TableDataInfo};
 use rust_xlsxwriter::Workbook;
+use sea_orm::DatabaseConnection;
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use tracing::{error, info, instrument};
 
 /// 分页查询岗位列表
 #[instrument(skip(db))]
-pub async fn select_post_list(db: &PgPool, params: ListPostQuery) -> Result<TableDataInfo<SysPost>, AppError> {
+pub async fn select_post_list(db: &DatabaseConnection, params: ListPostQuery) -> Result<TableDataInfo<SysPost>, AppError> {
+    let db = db.get_postgres_connection_pool();
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_post WHERE 1=1");
     let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT count(*) FROM sys_post WHERE 1=1");
 

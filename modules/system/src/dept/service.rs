@@ -1,9 +1,14 @@
-use super::model::{AddDeptVo, DeptTreeSelectVo, DeptTreeVo, SysDept, UpdateDeptVo};
+use super::model::{AddDeptVo, DeptTreeSelectVo, DeptTreeVo, UpdateDeptVo};
 use common::error::AppError;
-use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
+use entity::{
+    prelude::{SysDept, SysDeptColumn, SysDeptModel},
+    sys_dept,
+};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, TransactionTrait};
+use sqlx::{Postgres, QueryBuilder, Transaction};
 use tracing::{info, warn};
 
-pub async fn select_dept_list(db: &PgPool, dept_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysDept>, AppError> {
+pub async fn select_dept_list(db: &DatabaseConnection, dept_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysDeptModel>, AppError> {
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_dept WHERE del_flag = '0'");
 
     if let Some(name) = dept_name {
@@ -21,21 +26,28 @@ pub async fn select_dept_list(db: &PgPool, dept_name: Option<&str>, status: Opti
 
     query_builder.push(" ORDER BY parent_id, order_num");
 
-    let depts = query_builder.build_query_as().fetch_all(db).await?;
+    let depts = query_builder
+        .build_query_as()
+        .fetch_all(db.get_postgres_connection_pool())
+        .await?;
 
     Ok(depts)
 }
 
 /// 根据部门ID查询部门详情
-pub async fn select_dept_by_id(db: &PgPool, dept_id: i64) -> Result<SysDept, AppError> {
-    let dept = sqlx::query_as!(SysDept, "SELECT * FROM sys_dept WHERE dept_id = ?", dept_id)
-        .fetch_one(db)
-        .await?;
-    Ok(dept)
+pub async fn select_dept_by_id(db: &DatabaseConnection, dept_id: i64) -> Result<SysDeptModel, AppError> {
+    // let dept = sqlx::query_as!(SysDept, "SELECT * FROM sys_dept WHERE dept_id = ?", dept_id)
+    //     .fetch_one(db)
+    //     .await?;
+    // Ok(dept)
+    SysDept::find_by_id(dept_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::RecordNotFound)
 }
 
 /// 新增部门，并维护祖级列表 `ancestors`
-pub async fn add_dept(db: &PgPool, dept: AddDeptVo) -> Result<u64, AppError> {
+pub async fn add_dept(db: &DatabaseConnection, dept: AddDeptVo) -> Result<i64, AppError> {
     // 核心逻辑：根据 parent_id 查询父部门，以构建 ancestors
     let parent_ancestors = if dept.parent_id != 0 {
         let parent_dept = select_dept_by_id(db, dept.parent_id).await?;
@@ -46,24 +58,27 @@ pub async fn add_dept(db: &PgPool, dept: AddDeptVo) -> Result<u64, AppError> {
     // 新的 ancestors = 父部门的 ancestors + "," + parent_id
     let new_ancestors = format!("{},{}", parent_ancestors, dept.parent_id);
 
-    let result = sqlx::query!(
-        r#"
-            INSERT INTO sys_dept (parent_id, ancestors, dept_name, order_num, leader, phone, email, status, create_by, create_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())
-        "#,
-        dept.parent_id,
-        new_ancestors,
-        dept.dept_name,
-        dept.order_num,
-        dept.leader,
-        dept.phone,
-        dept.email,
-        dept.status
-    )
-    .execute(db)
-    .await?;
+    // let result = sqlx::query!(
+    //     r#"
+    //         INSERT INTO sys_dept (parent_id, ancestors, dept_name, order_num, leader, phone, email, status, create_by, create_time)
+    //         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())
+    //     "#,
+    //     dept.parent_id,
+    //     new_ancestors,
+    //     dept.dept_name,
+    //     dept.order_num,
+    //     dept.leader,
+    //     dept.phone,
+    //     dept.email,
+    //     dept.status
+    // )
+    // .execute(db)
+    // .await?;
+    let mut act_model: sys_dept::ActiveModel = dept.into();
+    act_model.ancestors = Set(Some(new_ancestors));
+    let model = act_model.insert(db).await?;
 
-    Ok(result.rows_affected())
+    Ok(model.dept_id)
 }
 
 /// 修改部门信息，并递归更新所有子孙部门的祖级列表 (ancestors)。
@@ -89,7 +104,7 @@ pub async fn add_dept(db: &PgPool, dept: AddDeptVo) -> Result<u64, AppError> {
 //     REPLACE(ancestors, old_path, new_path): 将 ancestors 字段中所有出现的 old_path 字符串替换为 new_path。
 //     WHERE ancestors LIKE 'old_path,%': 这个 WHERE 条件是关键，它确保只对 ancestors 以 old_path, 开头的行进行操作，也就是只更新真正的子孙部门，避免了错误地修改其他不相关的部门。
 //     提交事务: 所有操作成功后，提交事务，使更改永久生效。
-pub async fn update_dept(db: &PgPool, dept_vo: UpdateDeptVo) -> Result<u64, AppError> {
+pub async fn update_dept(db: &DatabaseConnection, dept_vo: UpdateDeptVo) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering dept::update_dept for dept_id: {}",
         dept_vo.dept_id
@@ -104,23 +119,29 @@ pub async fn update_dept(db: &PgPool, dept_vo: UpdateDeptVo) -> Result<u64, AppE
 
     //  1: 获取要修改的部门的旧数据
     // 我们需要在事务中查询，以防止在操作过程中数据被其他请求修改 (虽然概率很小，但这是最佳实践)
-    let old_dept = sqlx::query_as!(
-        SysDept,
-        "SELECT * FROM sys_dept WHERE dept_id = ?",
-        dept_vo.dept_id
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+    // let old_dept = sqlx::query_as!(
+    //     SysDept,
+    //     "SELECT * FROM sys_dept WHERE dept_id = ?",
+    //     dept_vo.dept_id
+    // )
+    // .fetch_one(&mut *tx)
+    // .await?;
+    let old_dept = SysDept::find()
+        .filter(SysDeptColumn::DeptId.eq(dept_vo.dept_id))
+        .one(&tx)
+        .await?
+        .ok_or(AppError::RecordNotFound)?;
 
     //  2: 计算新的祖级列表 (new_ancestors)
     // 获取新的父部门信息来构建 new_ancestors
-    let parent_dept = sqlx::query_as!(
-        SysDept,
-        "SELECT * FROM sys_dept WHERE dept_id = ?",
-        dept_vo.parent_id
-    )
-    .fetch_optional(&mut *tx) // 使用 fetch_optional 因为 parent_id=0 时查不到记录
-    .await?;
+    // let parent_dept = sqlx::query_as!(
+    //     SysDept,
+    //     "SELECT * FROM sys_dept WHERE dept_id = ?",
+    //     dept_vo.parent_id
+    // )
+    // .fetch_optional(&mut *tx) // 使用 fetch_optional 因为 parent_id=0 时查不到记录
+    // .await?;
+    let parent_dept = SysDept::find_by_id(dept_vo.parent_id).one(&tx).await?;
 
     // 如果父部门存在，则构建 ancestors；如果不存在(parent_id=0)，则 ancestors 为 "0"
     let new_ancestors = match parent_dept {
@@ -174,7 +195,7 @@ pub async fn update_dept(db: &PgPool, dept_vo: UpdateDeptVo) -> Result<u64, AppE
             .bind(&old_children_path)
             .bind(&new_children_path)
             .bind(format!("{},%", old_children_path))
-            .execute(&mut *tx)
+            .execute(&tx)
             .await?;
 
         info!(
@@ -196,27 +217,46 @@ pub async fn update_dept(db: &PgPool, dept_vo: UpdateDeptVo) -> Result<u64, AppE
 }
 
 /// 删除部门（逻辑删除）
-pub async fn delete_dept_by_id(db: &PgPool, dept_id: i64) -> Result<u64, AppError> {
-    // RuoYi 的删除是逻辑删除，更新 del_flag 字段
-    let result = sqlx::query!(
-        "UPDATE sys_dept SET del_flag = '2' WHERE dept_id = ?",
-        dept_id
-    )
-    .execute(db)
-    .await?;
+pub async fn delete_dept_by_id(db: &DatabaseConnection, dept_id: i64) -> Result<(), AppError> {
+    let exist = SysDept::find_by_id(dept_id).one(db).await?;
+    if exist.is_none() {
+        return Err(AppError::RecordNotFound);
+    }
 
-    Ok(result.rows_affected())
+    let mut model = exist.unwrap().into_active_model();
+    model.del_flag = Set(Some("2".to_string()));
+    model.update(db).await?;
+
+    // RuoYi 的删除是逻辑删除，更新 del_flag 字段
+    // let result = sqlx::query!(
+    // "UPDATE sys_dept SET del_flag = '2' WHERE dept_id = ?",
+    // dept_id
+    // )
+    // .execute(db.get_postgres_connection_pool())
+    // .await?;
+
+    Ok(())
 }
 
 // `select_dept_list_for_treeselect` 函数保持不变
-pub async fn select_dept_list_for_treeselect(db: &PgPool) -> Result<Vec<SysDept>, AppError> {
+pub async fn select_dept_list_for_treeselect(db: &DatabaseConnection) -> Result<Vec<SysDeptModel>, AppError> {
     info!("[SERVICE] Entering select_dept_list_for_treeselect");
-    let depts = sqlx::query_as!(
-        SysDept,
-        "SELECT * FROM sys_dept WHERE del_flag = '0' AND status = '0' ORDER BY parent_id, order_num"
-    )
-    .fetch_all(db)
-    .await?;
+    // let depts = sqlx::query_as!(
+    //     SysDept,
+    //     "SELECT * FROM sys_dept WHERE del_flag = '0' AND status = '0' ORDER BY parent_id, order_num"
+    // )
+    // .fetch_all(db)
+    // .await?;
+    let depts = SysDept::find()
+        .filter(
+            SysDeptColumn::DelFlag
+                .eq(Some("0".to_string()))
+                .and(SysDeptColumn::Status.eq(Some("0".to_string()))),
+        )
+        .order_by_asc(SysDeptColumn::ParentId)
+        .order_by_asc(SysDeptColumn::OrderNum)
+        .all(db)
+        .await?;
     info!(
         "[DB_RESULT] Found {} departments for treeselect.",
         depts.len()
@@ -225,7 +265,7 @@ pub async fn select_dept_list_for_treeselect(db: &PgPool) -> Result<Vec<SysDept>
 }
 
 /// 辅助函数：将部门的扁平列表构建成树形结构 (最终正确稳定版 - 递归法)
-pub fn build_dept_tree(depts: Vec<SysDept>) -> Vec<DeptTreeVo> {
+pub fn build_dept_tree(depts: Vec<SysDeptModel>) -> Vec<DeptTreeVo> {
     let mut all_nodes: Vec<DeptTreeVo> = depts
         .into_iter()
         .map(|dept| DeptTreeVo {
@@ -273,7 +313,7 @@ fn build_children_for_dept(parent: &mut DeptTreeVo, all_nodes: &mut Vec<DeptTree
 }
 
 /// 辅助函数：将扁平的 SysDept 列表构建成前端需要的 DeptTreeSelectVo 树形结构
-pub fn build_dept_treeselect(depts: Vec<SysDept>) -> Vec<DeptTreeSelectVo> {
+pub fn build_dept_treeselect(depts: Vec<SysDeptModel>) -> Vec<DeptTreeSelectVo> {
     let dept_tree_vo = build_dept_tree(depts);
     convert_dept_tree_to_select_tree(dept_tree_vo)
 }
@@ -299,7 +339,7 @@ fn convert_dept_tree_to_select_tree(tree_vo: Vec<DeptTreeVo>) -> Vec<DeptTreeSel
 /// # Returns
 ///
 /// 一个不包含 `exclude_dept_id` 及其子孙的扁平部门列表 `Vec<SysDept>`。
-pub async fn select_dept_list_exclude_child(db: &PgPool, exclude_dept_id: i64) -> Result<Vec<SysDept>, AppError> {
+pub async fn select_dept_list_exclude_child(db: &DatabaseConnection, exclude_dept_id: i64) -> Result<Vec<SysDeptModel>, AppError> {
     info!(
         "[SERVICE] Entering select_dept_list_exclude_child, excluding children of dept_id: {}",
         exclude_dept_id
@@ -325,7 +365,9 @@ pub async fn select_dept_list_exclude_child(db: &PgPool, exclude_dept_id: i64) -
     );
 
     // 3. 执行查询并返回结果
-    let depts: Vec<SysDept> = sqlx::query_as(&sql).fetch_all(db).await?;
+    let depts: Vec<SysDeptModel> = sqlx::query_as(&sql)
+        .fetch_all(db.get_postgres_connection_pool())
+        .await?;
     info!(
         "[DB_RESULT] Found {} departments after excluding children.",
         depts.len()

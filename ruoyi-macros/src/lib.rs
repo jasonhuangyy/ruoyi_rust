@@ -208,7 +208,7 @@ pub fn require_permission(args: TokenStream, item: TokenStream) -> TokenStream {
                 stringify!(#sig.ident)
             );
             if !is_admin {
-                let user_perms = match common::auth::get_user_permissions(&state_ref.db_pool, claims_ref.user_id).await {
+                let user_perms = match common::auth::get_user_permissions(&state_ref.db, claims_ref.user_id).await {
                     Ok(perms) => perms,
                     Err(e) => {
                         // 如果数据库查询失败，也记录错误

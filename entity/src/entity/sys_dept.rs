@@ -2,8 +2,9 @@
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+#[derive(FromRow, Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(schema_name = "app", table_name = "sys_dept")]
 pub struct Model {
     #[sea_orm(primary_key)]

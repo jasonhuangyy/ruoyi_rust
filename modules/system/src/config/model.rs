@@ -3,20 +3,20 @@ use serde::{Deserialize, Serialize};
 
 /// 数据库实体 (与 `sys_config` 表完全对应)
 /// 使用 `sqlx::FromRow` 以便从数据库查询结果自动映射。
-#[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SysConfig {
-    pub config_id: i32,
-    pub config_name: Option<String>,
-    pub config_key: Option<String>,
-    pub config_value: Option<String>,
-    pub config_type: Option<String>,
-    pub create_by: Option<String>,
-    pub create_time: Option<NaiveDateTime>,
-    pub update_by: Option<String>,
-    pub update_time: Option<NaiveDateTime>,
-    pub remark: Option<String>,
-}
+// #[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct SysConfig {
+//     pub config_id: i32,
+//     pub config_name: Option<String>,
+//     pub config_key: Option<String>,
+//     pub config_value: Option<String>,
+//     pub config_type: Option<String>,
+//     pub create_by: Option<String>,
+//     pub create_time: Option<NaiveDateTime>,
+//     pub update_by: Option<String>,
+//     pub update_time: Option<NaiveDateTime>,
+//     pub remark: Option<String>,
+// }
 
 /// 列表分页查询参数 DTO (Data Transfer Object)
 #[derive(Debug, Clone, Deserialize)]

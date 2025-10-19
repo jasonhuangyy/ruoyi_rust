@@ -29,7 +29,7 @@ struct DbConfig {
     pub sqlx_logging: Option<bool>,
     pub sqlx_logging_level: Option<String>,
 }
-pub async fn create_db() -> DatabaseConnection {
+pub async fn new() -> DatabaseConnection {
     // 从环境变量中读取数据库配置信息，如果读取失败，则输出错误信息
     let config = envy::from_env::<DbConfig>().expect("数据库连接配置错误");
 

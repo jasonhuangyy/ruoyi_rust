@@ -1,30 +1,31 @@
-use chrono::NaiveDateTime;
+// use chrono::NaiveDateTime;
+use entity::prelude::SysJobModel;
 use serde::de::Error;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 /// 定时任务调度实体，与 `sys_job` 数据库表完全对应。
-#[derive(sqlx::FromRow, Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SysJob {
-    pub job_id: i64,
-    pub job_name: Option<String>,
-    pub job_group: Option<String>,
-    // 调用目标字符串，例如 "ryTask.ryNoParams" 或 "ryTask.ryParams('hello')"
-    pub invoke_target: Option<String>,
-    pub cron_expression: Option<String>,
-    // 计划执行错误策略 (1=立即执行, 2=执行一次, 3=放弃执行)
-    pub misfire_policy: Option<String>,
-    // 是否并发执行 (0=允许, 1=禁止)
-    pub concurrent: Option<String>,
-    // 状态 (0=正常, 1=暂停)
-    pub status: Option<String>,
-    pub create_by: Option<String>,
-    pub create_time: Option<NaiveDateTime>,
-    pub update_by: Option<String>,
-    pub update_time: Option<NaiveDateTime>,
-    pub remark: Option<String>,
-}
+// #[derive(sqlx::FromRow, Debug, Serialize, Deserialize, Clone)]
+// #[serde(rename_all = "camelCase")]
+// pub struct SysJob {
+//     pub job_id: i64,
+//     pub job_name: Option<String>,
+//     pub job_group: Option<String>,
+//     // 调用目标字符串，例如 "ryTask.ryNoParams" 或 "ryTask.ryParams('hello')"
+//     pub invoke_target: Option<String>,
+//     pub cron_expression: Option<String>,
+//     // 计划执行错误策略 (1=立即执行, 2=执行一次, 3=放弃执行)
+//     pub misfire_policy: Option<String>,
+//     // 是否并发执行 (0=允许, 1=禁止)
+//     pub concurrent: Option<String>,
+//     // 状态 (0=正常, 1=暂停)
+//     pub status: Option<String>,
+//     pub create_by: Option<String>,
+//     pub create_time: Option<NaiveDateTime>,
+//     pub update_by: Option<String>,
+//     pub update_time: Option<NaiveDateTime>,
+//     pub remark: Option<String>,
+// }
 
 /// 用于定时任务列表查询的参数结构体
 #[derive(Deserialize, Debug)]
@@ -85,6 +86,26 @@ pub struct AddJobVo {
     pub remark: Option<String>,
 }
 
+impl Into<SysJobModel> for AddJobVo {
+    fn into(self) -> SysJobModel {
+        SysJobModel {
+            job_id: 0,
+            create_by: None,
+            create_time: None,
+            update_by: None,
+            update_time: None,
+            job_name: self.job_name,
+            job_group: self.job_group,
+            invoke_target: self.invoke_target,
+            cron_expression: Some(self.cron_expression),
+            misfire_policy: Some(self.misfire_policy),
+            concurrent: Some(self.concurrent),
+            status: Some(self.status),
+            remark: self.remark,
+        }
+    }
+}
+
 /// 修改定时任务时接收前端数据的请求体 (VO/DTO)
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -94,7 +115,7 @@ pub struct UpdateJobVo {
     #[serde(default = "default_job_group")]
     pub job_group: String,
     pub invoke_target: String,
-    pub cron_expression: String,
+    pub cron_expression: Option<String>,
 
     #[serde(deserialize_with = "deserialize_to_string")]
     pub misfire_policy: String,

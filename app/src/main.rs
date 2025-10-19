@@ -23,6 +23,8 @@ use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), common::error::AppError> {
+    dotenvy::dotenv().expect("Failed to load .env file");
+
     // 初始化日志
     framework::log::init_tracing();
 
@@ -31,7 +33,7 @@ async fn main() -> Result<(), common::error::AppError> {
 
     // 初始化数据库连接池
     // let db_pool = db::create_db_pool(&settings.database.url).await?;
-    let db = db::create_db().await;
+    let db = db::new().await;
 
     // 从配置中创建 JWT 配置
     info!("[CONFIG] Loading JWT configuration from settings...");

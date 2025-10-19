@@ -1,14 +1,19 @@
-use common::models::dict_model::SysDictData;
+use super::model::{AddDictDataVo, AddDictTypeVo, ListDictDataQuery, ListDictTypeQuery, UpdateDictDataVo, UpdateDictTypeVo};
 use common::{constants::cache_keys, error::AppError, page::TableDataInfo};
+use entity::{
+    prelude::{SysDictData, SysDictDataColumn, SysDictDataModel, SysDictType, SysDictTypeColumn, SysDictTypeModel},
+    sys_dict_data, sys_dict_type,
+};
 use moka::future::Cache;
 use rust_xlsxwriter::Workbook;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 use tracing::{info, instrument};
 
-use super::model::{AddDictDataVo, AddDictTypeVo, DictTypeOptionVo, ListDictDataQuery, ListDictTypeQuery, SysDictType, UpdateDictDataVo, UpdateDictTypeVo};
-
 /// 查询字典类型列表（分页）
-pub async fn select_dict_type_list(db: &PgPool, params: ListDictTypeQuery) -> Result<TableDataInfo<SysDictType>, AppError> {
+pub async fn select_dict_type_list(db: &DatabaseConnection, params: ListDictTypeQuery) -> Result<TableDataInfo<SysDictTypeModel>, AppError> {
+    let db = db.get_postgres_connection_pool();
+
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_dict_type WHERE 1=1");
     let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) as count FROM sys_dict_type WHERE 1=1");
 
@@ -51,39 +56,44 @@ pub async fn select_dict_type_list(db: &PgPool, params: ListDictTypeQuery) -> Re
         .push(" OFFSET ")
         .push_bind(offset);
 
-    let rows: Vec<SysDictType> = query_builder.build_query_as().fetch_all(db).await?;
+    let rows: Vec<SysDictTypeModel> = query_builder.build_query_as().fetch_all(db).await?;
 
     Ok(TableDataInfo::new(rows, total))
 }
 
 /// 根据ID查询字典类型详情
-pub async fn select_dict_type_by_id(db: &PgPool, dict_id: i64) -> Result<SysDictType, AppError> {
-    let dict_type = sqlx::query_as!(
-        SysDictType,
-        "SELECT * FROM sys_dict_type WHERE dict_id = ?",
-        dict_id
-    )
-    .fetch_one(db)
-    .await?;
-    Ok(dict_type)
+pub async fn select_dict_type_by_id(db: &DatabaseConnection, dict_id: i64) -> Result<SysDictTypeModel, AppError> {
+    let dict_type = SysDictType::find_by_id(dict_id).one(db).await?;
+
+    //  sqlx::query_as!(
+    //     SysDictType,
+    //     "SELECT * FROM sys_dict_type WHERE dict_id = ?",
+    //     dict_id
+    // )
+    // .fetch_one(db)
+    // .await?;
+    dict_type.ok_or(AppError::RecordNotFound)
 }
 
 /// 新增字典类型
-pub async fn add_dict_type(db: &PgPool, vo: AddDictTypeVo) -> Result<u64, AppError> {
-    let result = sqlx::query!(
-        "INSERT INTO sys_dict_type (dict_name, dict_type, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, 'admin', NOW())",
-        vo.dict_name,
-        vo.dict_type,
-        vo.status,
-        vo.remark
-    )
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected())
+pub async fn add_dict_type(db: &DatabaseConnection, vo: AddDictTypeVo) -> Result<i64, AppError> {
+    // let result = sqlx::query!(
+    //     "INSERT INTO sys_dict_type (dict_name, dict_type, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, 'admin', NOW())",
+    //     vo.dict_name,
+    //     vo.dict_type,
+    //     vo.status,
+    //     vo.remark
+    // )
+    // .execute(db.get_postgres_connection_pool())
+    // .await?;
+    let result = Into::<sys_dict_type::ActiveModel>::into(vo)
+        .insert(db)
+        .await?;
+    Ok(result.dict_id)
 }
 
 /// 修改字典类型
-pub async fn update_dict_type(db: &PgPool, vo: UpdateDictTypeVo, cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
+pub async fn update_dict_type(db: &DatabaseConnection, vo: UpdateDictTypeVo, cache: &Cache<String, Vec<SysDictDataModel>>) -> Result<u64, AppError> {
     // 如果字典类型字符串（dict_type）被修改，需要删除旧的缓存
     // 1. 先查询旧的数据
     let old_dict_type = select_dict_type_by_id(db, vo.dict_id).await?;
@@ -113,7 +123,7 @@ pub async fn update_dict_type(db: &PgPool, vo: UpdateDictTypeVo, cache: &Cache<S
 }
 
 /// 删除字典类型
-pub async fn delete_dict_type_by_ids(db: &PgPool, ids: Vec<i64>) -> Result<u64, AppError> {
+pub async fn delete_dict_type_by_ids(db: &DatabaseConnection, ids: Vec<i64>) -> Result<u64, AppError> {
     // RuoYi 的实现会检查是否有关联的字典数据，这里简化为直接删除
     let query_str = format!(
         "DELETE FROM sys_dict_type WHERE dict_id IN ({})",
@@ -122,24 +132,28 @@ pub async fn delete_dict_type_by_ids(db: &PgPool, ids: Vec<i64>) -> Result<u64, 
             .collect::<Vec<String>>()
             .join(",")
     );
-    let result = sqlx::query(&query_str).execute(db).await?;
+    let result = sqlx::query(&query_str)
+        .execute(db.get_postgres_connection_pool())
+        .await?;
     Ok(result.rows_affected())
 }
 
 /// 获取所有字典类型作为下拉框选项
-pub async fn get_dict_type_option_select(db: &PgPool) -> Result<Vec<DictTypeOptionVo>, AppError> {
+pub async fn get_dict_type_option_select(db: &DatabaseConnection) -> Result<Vec<SysDictTypeModel>, AppError> {
     // 目标结构体是 DictTypeOptionVo，所以 SQL 语句现在是合法的
-    let list = sqlx::query_as!(
-        DictTypeOptionVo,
-        "SELECT dict_id, dict_name FROM sys_dict_type"
-    )
-    .fetch_all(db)
-    .await?;
+    // let list = sqlx::query_as!(
+    //     SysDictTypeModel,
+    //     "SELECT dict_id, dict_name FROM sys_dict_type"
+    // )
+    // .fetch_all(db.get_postgres_connection_pool())
+    // .await?;
+    let list = SysDictType::find().all(db).await?;
     Ok(list)
 }
 
 /// 查询字典数据列表（分页）
-pub async fn select_dict_data_list(db: &PgPool, params: ListDictDataQuery) -> Result<TableDataInfo<SysDictData>, AppError> {
+pub async fn select_dict_data_list(db: &DatabaseConnection, params: ListDictDataQuery) -> Result<TableDataInfo<SysDictDataModel>, AppError> {
+    let db = db.get_postgres_connection_pool();
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_dict_data WHERE 1=1 ");
     let mut count_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT COUNT(*) FROM sys_dict_data WHERE 1=1 ");
     query_builder
@@ -180,68 +194,83 @@ pub async fn select_dict_data_list(db: &PgPool, params: ListDictDataQuery) -> Re
 }
 
 /// 根据ID查询字典数据详情
-pub async fn select_dict_data_by_code(db: &PgPool, dict_code: i64) -> Result<SysDictData, AppError> {
-    let data = sqlx::query_as!(
-        SysDictData,
-        "SELECT * FROM sys_dict_data WHERE dict_code = ?",
-        dict_code
-    )
-    .fetch_one(db)
-    .await?;
-    Ok(data)
+pub async fn select_dict_data_by_code(db: &DatabaseConnection, dict_code: i64) -> Result<SysDictDataModel, AppError> {
+    // let data = sqlx::query_as!(
+    //     SysDictData,
+    //     "SELECT * FROM sys_dict_data WHERE dict_code = ?",
+    //     dict_code
+    // )
+    // .fetch_one(db.get_postgres_connection_pool())
+    // .await?;
+
+    SysDictData::find()
+        .filter(SysDictDataColumn::DictCode.eq(dict_code))
+        .one(db)
+        .await?
+        .ok_or(AppError::RecordNotFound)
 }
 
 /// 新增字典数据
-pub async fn add_dict_data(db: &PgPool, vo: AddDictDataVo, cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
-    let result = sqlx::query!(
-        "INSERT INTO sys_dict_data (dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())",
-        vo.dict_sort,
-        vo.dict_label,
-        vo.dict_value,
-        vo.dict_type,
-        vo.css_class,
-        vo.list_class,
-        vo.is_default,
-        vo.status,
-        vo.remark
-    )
-    .execute(db)
-    .await?;
+pub async fn add_dict_data(db: &DatabaseConnection, vo: AddDictDataVo, cache: &Cache<String, Vec<SysDictDataModel>>) -> Result<i64, AppError> {
+    // let result = sqlx::query!(
+    //     "INSERT INTO sys_dict_data (dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())",
+    //     vo.dict_sort,
+    //     vo.dict_label,
+    //     vo.dict_value,
+    //     vo.dict_type,
+    //     vo.css_class,
+    //     vo.list_class,
+    //     vo.is_default,
+    //     vo.status,
+    //     vo.remark
+    // )
+    // .execute(db)
+    // .await?;
+
+    let dict_type = vo.dict_type.clone();
+    let result = Into::<sys_dict_data::ActiveModel>::into(vo)
+        .insert(db)
+        .await?;
     // 操作成功后，使该类型的缓存失效
-    let cache_key = format!("{}{}", cache_keys::SYS_DICT_KEY, vo.dict_type);
-    cache.invalidate(&cache_key).await;
+    let cache_key = format!("{}{}", cache_keys::SYS_DICT_KEY, dict_type);
     info!(
         "[CACHE] Invalidated dict cache due to new data: {}",
         cache_key
     );
-    Ok(result.rows_affected())
+    cache.invalidate(&cache_key).await;
+    Ok(result.dict_code)
 }
 
 /// 修改字典数据
-pub async fn update_dict_data(db: &PgPool, vo: UpdateDictDataVo, cache: &Cache<String, Vec<SysDictData>>) -> Result<u64, AppError> {
-    let result = sqlx::query!(
-        "UPDATE sys_dict_data SET dict_sort = ?, dict_label = ?, dict_value = ?, dict_type = ?, css_class = ?, list_class = ?, is_default = ?, status = ?, remark = ?, update_by = 'admin', update_time = NOW() WHERE dict_code = ?",
-        vo.dict_sort,
-        vo.dict_label,
-        vo.dict_value,
-        vo.dict_type,
-        vo.css_class,
-        vo.list_class,
-        vo.is_default,
-        vo.status,
-        vo.remark,
-        vo.dict_code
-    )
-    .execute(db)
-    .await?;
+pub async fn update_dict_data(db: &DatabaseConnection, vo: UpdateDictDataVo, cache: &Cache<String, Vec<SysDictDataModel>>) -> Result<i64, AppError> {
+    // let result = sqlx::query!(
+    //     "UPDATE sys_dict_data SET dict_sort = ?, dict_label = ?, dict_value = ?, dict_type = ?, css_class = ?, list_class = ?, is_default = ?, status = ?, remark = ?, update_by = 'admin', update_time = NOW() WHERE dict_code = ?",
+    //     vo.dict_sort,
+    //     vo.dict_label,
+    //     vo.dict_value,
+    //     vo.dict_type,
+    //     vo.css_class,
+    //     vo.list_class,
+    //     vo.is_default,
+    //     vo.status,
+    //     vo.remark,
+    //     vo.dict_code
+    // )
+    // .execute(db)
+    // .await?;
+
+    let dict_type = vo.dict_type.clone();
+    let result = Into::<sys_dict_data::ActiveModel>::into(vo)
+        .update(db)
+        .await?;
     // 操作成功后，使该类型的缓存失效
-    let cache_key = format!("{}{}", cache_keys::SYS_DICT_KEY, vo.dict_type);
+    let cache_key = format!("{}{}", cache_keys::SYS_DICT_KEY, dict_type);
     cache.invalidate(&cache_key).await;
     info!(
         "[CACHE] Invalidated dict cache due to data update: {}",
         cache_key
     );
-    Ok(result.rows_affected())
+    Ok(result.dict_code)
 }
 
 /// 删除字典数据
@@ -263,10 +292,10 @@ pub async fn delete_dict_data_by_codes(db: &PgPool, codes: Vec<i64>, _cache: &Ca
 
 /// 根据字典类型查询字典数据列表（核心缓存接口）
 pub async fn select_dict_data_by_type(
-    db: &PgPool,
-    cache: &Cache<String, Vec<SysDictData>>, // 传入缓存实例
+    db: &DatabaseConnection,
+    cache: &Cache<String, Vec<SysDictDataModel>>, // 传入缓存实例
     dict_type: &str,
-) -> Result<Vec<SysDictData>, AppError> {
+) -> Result<Vec<SysDictDataModel>, AppError> {
     let cache_key = format!("{}{}", cache_keys::SYS_DICT_KEY, dict_type);
     println!(
         "[DEBUG] Attempting to get dict from cache with key: {}",
@@ -284,13 +313,22 @@ pub async fn select_dict_data_by_type(
         "[DEBUG] Cache MISS for key: {}. Querying database...",
         cache_key
     );
-    let dict_data = sqlx::query_as!(
-        SysDictData,
-        "SELECT * FROM sys_dict_data WHERE status = '0' AND dict_type = ? ORDER BY dict_sort",
-        dict_type
-    )
-    .fetch_all(db)
-    .await?;
+    // let dict_data = sqlx::query_as!(
+    //     SysDictData,
+    //     "SELECT * FROM sys_dict_data WHERE status = '0' AND dict_type = ? ORDER BY dict_sort",
+    //     dict_type
+    // )
+    // .fetch_all(db)
+    // .await?;
+    let dict_data = SysDictData::find()
+        .filter(
+            SysDictDataColumn::DictType
+                .eq(dict_type)
+                .and(SysDictDataColumn::Status.eq("0")),
+        )
+        .order_by_asc(SysDictDataColumn::DictSort)
+        .all(db)
+        .await?;
 
     // 3. 将查询结果存入缓存
     // 我们需要克隆一份数据放入缓存，因为原始数据的所有权将被函数返回
@@ -301,7 +339,7 @@ pub async fn select_dict_data_by_type(
 }
 
 /// 刷新所有字典缓存
-pub async fn refresh_dict_cache(db: &PgPool, cache: &Cache<String, Vec<SysDictData>>) -> Result<(), AppError> {
+pub async fn refresh_dict_cache(db: &DatabaseConnection, cache: &Cache<String, Vec<SysDictDataModel>>) -> Result<(), AppError> {
     // 1. 先清空所有字典缓存
     cache.invalidate_all();
     println!("[DEBUG] All dict cache invalidated.");
@@ -309,7 +347,7 @@ pub async fn refresh_dict_cache(db: &PgPool, cache: &Cache<String, Vec<SysDictDa
     // 2. 从数据库中查询出所有唯一的、非空的字典类型
     // sqlx::query_scalar 在查询可空列时，返回 Vec<Option<String>>
     let dict_types: Vec<Option<String>> = sqlx::query_scalar("SELECT DISTINCT dict_type FROM sys_dict_type WHERE dict_type IS NOT NULL AND dict_type != ''")
-        .fetch_all(db)
+        .fetch_all(db.get_postgres_connection_pool())
         .await?;
 
     // 3. 遍历每种类型，重新加载并缓存
@@ -330,11 +368,12 @@ pub async fn refresh_dict_cache(db: &PgPool, cache: &Cache<String, Vec<SysDictDa
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_dict_type_list(db: &PgPool, params: ListDictTypeQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_dict_type_list(db: &DatabaseConnection, params: ListDictTypeQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting dict type list export with params: {:?}",
         params
     );
+    let db = db.get_postgres_connection_pool();
 
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_dict_type WHERE 1=1");
 
@@ -360,7 +399,7 @@ pub async fn export_dict_type_list(db: &PgPool, params: ListDictTypeQuery) -> Re
 
     query_builder.push(" ORDER BY create_time DESC");
 
-    let dict_types: Vec<SysDictType> = query_builder.build_query_as().fetch_all(db).await?;
+    let dict_types: Vec<SysDictTypeModel> = query_builder.build_query_as().fetch_all(db).await?;
     info!(
         "[DB_RESULT] Fetched {} dict types for export.",
         dict_types.len()

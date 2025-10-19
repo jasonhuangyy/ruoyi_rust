@@ -1,37 +1,40 @@
 use super::model::{ListLogininforQuery, SysLogininfor};
 use common::error::AppError;
 use common::page::TableDataInfo;
+use entity::prelude::SysLogininforModel;
 use rust_xlsxwriter::Workbook;
-use sqlx::{PgPool, Postgres, QueryBuilder};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, IntoActiveModel};
+use sqlx::{Postgres, QueryBuilder};
 use tracing::{info, instrument};
 
 /// 新增一条登录日志记录
-pub async fn add_logininfor(db: &PgPool, log: SysLogininfor) -> Result<(), AppError> {
+pub async fn add_logininfor(db: &DatabaseConnection, log: SysLogininforModel) -> Result<(), AppError> {
     info!(
         "[SERVICE] Preparing to add login information log for user: {:?}",
         log.user_name
     );
 
-    sqlx::query!(
-        "INSERT INTO sys_logininfor (user_name, ipaddr, login_location, browser, os, status, msg, login_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        log.user_name,
-        log.ipaddr,
-        log.login_location,
-        log.browser,
-        log.os,
-        log.status,
-        log.msg,
-        log.login_time,
-    )
-    .execute(db)
-    .await?;
+    // sqlx::query!(
+    //     "INSERT INTO sys_logininfor (user_name, ipaddr, login_location, browser, os, status, msg, login_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    //     log.user_name,
+    //     log.ipaddr,
+    //     log.login_location,
+    //     log.browser,
+    //     log.os,
+    //     log.status,
+    //     log.msg,
+    //     log.login_time,
+    // )
+    // .execute(db.get_postgres_connection_pool())
+    // .await?;
 
+    log.into_active_model().insert(db).await?;
     info!("[SERVICE] Login information log added successfully.");
     Ok(())
 }
 
 /// 查询登录日志列表（分页）
-pub async fn select_logininfor_list(db: &PgPool, params: ListLogininforQuery) -> Result<TableDataInfo<SysLogininfor>, AppError> {
+pub async fn select_logininfor_list(db: &DatabaseConnection, params: ListLogininforQuery) -> Result<TableDataInfo<SysLogininfor>, AppError> {
     info!(
         "[SERVICE] Entering select_logininfor_list with params: {:?}",
         params
@@ -93,7 +96,10 @@ pub async fn select_logininfor_list(db: &PgPool, params: ListLogininforQuery) ->
         }
     }
 
-    let total: (i64,) = count_builder.build_query_as().fetch_one(db).await?;
+    let total: (i64,) = count_builder
+        .build_query_as()
+        .fetch_one(db.get_postgres_connection_pool())
+        .await?;
 
     let page_num = params.page_num.unwrap_or(1);
     let page_size = params.page_size.unwrap_or(10);
@@ -106,7 +112,10 @@ pub async fn select_logininfor_list(db: &PgPool, params: ListLogininforQuery) ->
         .push_bind(offset);
 
     info!("[DB_QUERY] Executing query for logininfor list (using QueryBuilder)");
-    let rows: Vec<SysLogininfor> = query_builder.build_query_as().fetch_all(db).await?;
+    let rows: Vec<SysLogininfor> = query_builder
+        .build_query_as()
+        .fetch_all(db.get_postgres_connection_pool())
+        .await?;
     info!(
         "[DB_RESULT] Found {} logininfors for the current page.",
         rows.len()
@@ -115,7 +124,7 @@ pub async fn select_logininfor_list(db: &PgPool, params: ListLogininforQuery) ->
     Ok(TableDataInfo::new(rows, total.0))
 }
 /// 批量删除登录日志
-pub async fn delete_logininfor_by_ids(db: &PgPool, info_ids: &[i64]) -> Result<u64, AppError> {
+pub async fn delete_logininfor_by_ids(db: &DatabaseConnection, info_ids: &[i64]) -> Result<u64, AppError> {
     info!(
         "[SERVICE] Entering delete_logininfor_by_ids with ids: {:?}",
         info_ids
@@ -128,7 +137,7 @@ pub async fn delete_logininfor_by_ids(db: &PgPool, info_ids: &[i64]) -> Result<u
         query = query.bind(id);
     }
 
-    let result = query.execute(db).await?;
+    let result = query.execute(db.get_postgres_connection_pool()).await?;
     info!(
         "[DB_RESULT] Deleted {} logininfors.",
         result.rows_affected()
@@ -137,17 +146,17 @@ pub async fn delete_logininfor_by_ids(db: &PgPool, info_ids: &[i64]) -> Result<u
 }
 
 /// 清空所有登录日志
-pub async fn clean_logininfor(db: &PgPool) -> Result<u64, AppError> {
+pub async fn clean_logininfor(db: &DatabaseConnection) -> Result<u64, AppError> {
     info!("[SERVICE] Entering clean_logininfor");
     let result = sqlx::query("TRUNCATE TABLE sys_logininfor")
-        .execute(db)
+        .execute(db.get_postgres_connection_pool())
         .await?;
     info!("[DB_RESULT] Truncated sys_logininfor table.");
     Ok(result.rows_affected())
 }
 
 #[instrument(skip(db, params))]
-pub async fn export_logininfor_list(db: &PgPool, params: ListLogininforQuery) -> Result<Vec<u8>, AppError> {
+pub async fn export_logininfor_list(db: &DatabaseConnection, params: ListLogininforQuery) -> Result<Vec<u8>, AppError> {
     info!(
         "[SERVICE] Starting logininfor list export with params: {:?}",
         params
@@ -192,7 +201,10 @@ pub async fn export_logininfor_list(db: &PgPool, params: ListLogininforQuery) ->
     }
     query_builder.push(" ORDER BY login_time DESC");
 
-    let login_logs: Vec<SysLogininfor> = query_builder.build_query_as().fetch_all(db).await?;
+    let login_logs: Vec<SysLogininfor> = query_builder
+        .build_query_as()
+        .fetch_all(db.get_postgres_connection_pool())
+        .await?;
     info!(
         "[DB_RESULT] Fetched {} login logs for export.",
         login_logs.len()
