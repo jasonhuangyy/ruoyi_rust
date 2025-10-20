@@ -50,7 +50,7 @@ pub struct AddRoleVo {
     pub role_name: String,
     pub role_key: String,
     pub role_sort: i32,
-    pub status: String,
+    pub status: Option<String>,
     pub remark: Option<String>,
     // 新增角色时，可能同时会关联菜单
     pub menu_ids: Option<Vec<i64>>,

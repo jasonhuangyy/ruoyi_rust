@@ -144,9 +144,10 @@ pub async fn add_role(db: &DatabaseConnection, vo: AddRoleVo) -> Result<i64, App
         role_name: vo.role_name,
         role_key: vo.role_key,
         role_sort: vo.role_sort,
-        status: vo.status,
+        status: vo.status.unwrap_or("0".to_string()),
         remark: vo.remark,
         create_by: Some("admin".to_string()),
+        del_flag: Some("0".to_string()),
         ..Default::default()
     }
     .into_active_model();
@@ -156,6 +157,10 @@ pub async fn add_role(db: &DatabaseConnection, vo: AddRoleVo) -> Result<i64, App
     model.update_time = NotSet;
 
     let result = model.insert(db).await?;
+    info!(
+        "[DB_RESULT] Inserted into sys_role, new role_id: {}",
+        result.role_id
+    );
 
     // info!("[TX] Transaction started for adding a new role.");
     // let result = sqlx::query!(
