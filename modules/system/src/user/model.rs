@@ -1,11 +1,8 @@
 use crate::dept::model::SysDept;
-// 引入部门模型
-use crate::post::model::SysPost;
-use crate::role::model::SysRole;
-// 引入角色模型
 use chrono::NaiveDateTime;
+use entity::{prelude::*, sys_user};
+use sea_orm::ActiveValue::{NotSet, Set};
 use serde::{Deserialize, Serialize};
-// 引入岗位模型
 
 /// 用户信息实体，与 `sys_user` 数据库表完全对应。
 #[derive(sqlx::FromRow, Debug, Serialize, Deserialize, Clone)]
@@ -58,16 +55,16 @@ pub struct ListUserQuery {
 pub struct UserListVo {
     // 使用 `flatten` 将 SysUser 的所有字段“拍平”到这一层
     #[serde(flatten)]
-    pub user: SysUser,
+    pub user: SysUserModel,
     // 关联的部门信息
-    pub dept: Option<SysDept>,
+    pub dept: Option<SysDeptModel>,
 }
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct AddUserInitVo {
     // 系统中所有可用的角色列表
-    pub roles: Vec<SysRole>,
-    pub posts: Vec<SysPost>,
+    pub roles: Vec<SysRoleModel>,
+    pub posts: Vec<SysPostModel>,
 }
 /// 新增用户时接收前端数据的请求体
 #[derive(Deserialize, Debug, Clone)]
@@ -84,6 +81,33 @@ pub struct AddUserVo {
     pub remark: Option<String>,
     pub role_ids: Option<Vec<i64>>, // 关联的角色ID列表
     pub post_ids: Option<Vec<i64>>,
+}
+
+impl Into<sys_user::ActiveModel> for AddUserVo {
+    fn into(self) -> sys_user::ActiveModel {
+        sys_user::ActiveModel {
+            dept_id: Set(self.dept_id),
+            user_name: Set(self.user_name),
+            nick_name: Set(self.nick_name),
+            password: Set(self.password),
+            phonenumber: Set(self.phonenumber),
+            email: Set(self.email),
+            sex: Set(self.sex),
+            status: Set(self.status),
+            remark: Set(self.remark),
+            user_id: NotSet,
+            user_type: Set(None),
+            avatar: Set(None),
+            del_flag: Set(Some("0".to_string())),
+            login_ip: Set(None),
+            login_date: Set(None),
+            pwd_update_date: Set(None),
+            create_by: Set(Some("admin".to_string())),
+            create_time: Set(Some(chrono::Utc::now().naive_utc())),
+            update_by: Set(None),
+            update_time: Set(Some(chrono::Utc::now().naive_utc())),
+        }
+    }
 }
 
 /// 修改用户时接收前端数据的请求体
@@ -123,15 +147,15 @@ pub struct ChangeStatusVo {
 #[serde(rename_all = "camelCase")]
 pub struct UserDetailVo {
     // 当前用户的数据
-    pub data: Option<SysUser>,
+    pub data: Option<SysUserModel>,
     // 当前用户已关联的角色ID列表
     pub role_ids: Vec<i64>,
     // 系统中所有可用的角色列表
-    pub roles: Vec<SysRole>,
+    pub roles: Vec<SysRoleModel>,
     // 当前用户已关联的岗位ID列表
     pub post_ids: Vec<i64>,
     // 系统中所有可用的岗位列表
-    pub posts: Vec<SysPost>,
+    pub posts: Vec<SysPostModel>,
 }
 
 /// 获取用户个人信息时返回给前端的视图对象
@@ -159,8 +183,8 @@ pub struct UpdatePwdVo {
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthRoleVo {
-    pub user: SysUser,
-    pub roles: Vec<SysRole>,
+    pub user: SysUserModel,
+    pub roles: Vec<SysRoleModel>,
 }
 
 /// 更新用户角色分配时接收的请求体

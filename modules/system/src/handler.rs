@@ -14,13 +14,13 @@ use framework::jwt::ClaimsData;
 use framework::state::AppState;
 use jwt_simple::prelude::*;
 use monitor::logininfor;
-use monitor::logininfor::model::SysLogininfor;
-use sqlx::DatabaseConnnection;
+// use monitor::logininfor::model::SysLogininfor;
+// use sqlx::DatabaseConnnection;
+use sea_orm::DatabaseConnection;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{error, info, instrument};
 use uuid::Uuid;
-
 #[derive(Serialize)]
 pub struct LoginData {
     #[serde(rename = "token")]
@@ -45,7 +45,7 @@ pub struct UserDetail {
     // ... 可以添加更多用户详情字段，如 avatar, email等
 }
 
-async fn record_login_log(db: &DatabaseConnnection, user_name: String, ipaddr: String, status: &'static str, msg: String) {
+async fn record_login_log(db: Arc<DatabaseConnection>, user_name: String, ipaddr: String, status: &'static str, msg: String) {
     let log = SysLogininforModel {
         info_id: 0,
         user_name: Some(user_name),
@@ -61,7 +61,7 @@ async fn record_login_log(db: &DatabaseConnnection, user_name: String, ipaddr: S
 
     // 在一个独立的后台任务中执行数据库写入
     tokio::spawn(async move {
-        if let Err(e) = logininfor::service::add_logininfor(db, log).await {
+        if let Err(e) = logininfor::service::add_logininfor(db.clone(), log).await {
             // 这里的错误只会打印到服务器日志，不会影响主登录流程
             error!("[LOG_TASK] 记录登录日志失败: {:?}", e);
         } else {
@@ -74,7 +74,7 @@ async fn record_login_log(db: &DatabaseConnnection, user_name: String, ipaddr: S
 pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extension<ConnectInfo<SocketAddr>>, Json(payload): Json<LoginRequest>) -> Result<Json<AjaxResult<LoginVo>>, AppError> {
     let ipaddr = addr.ip().to_string();
 
-    let db = state.db.clone();
+    let db = Arc::new(state.db.clone());
 
     let (user_name, password, _code, _uuid) = (
         payload.username,
@@ -90,13 +90,13 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
     // 1.1 验证码校验
     //#[cfg(not(debug_assertions))]
     if state.settings.security.captcha_enabled {
-        match state.captcha_cache.get(&_uuid).await {
+        match state.cache.captcha_cache.get(&_uuid).await {
             Some(correct_code) if correct_code.to_lowercase() == _code.to_lowercase() => {
-                state.captcha_cache.invalidate(&_uuid).await;
+                state.cache.captcha_cache.invalidate(&_uuid).await;
             }
             _ => {
                 record_login_log(
-                    state.db.clone(),
+                    db.clone(),
                     user_name.clone(),
                     addr.ip().to_string(),
                     "1",
@@ -108,11 +108,11 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
         }
     }
     // 用户名密码校验
-    let db_user = match user::service::select_user_by_username(&state.db, &user_name).await? {
+    let db_user = match user::service::select_user_by_username(db.as_ref(), &user_name).await? {
         Some(u) => u,
         None => {
             error!("[LOGIN_HANDLER] 用户 '{}' 不存在.", &user_name);
-            record_login_log(db, user_name, ipaddr, "1", "用户不存在".to_string()).await;
+            record_login_log(db.clone(), user_name, ipaddr, "1", "用户不存在".to_string()).await;
             return Err(AppError::InvalidCredentials);
         }
     };
@@ -128,7 +128,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
             user_name
         );
         record_login_log(
-            db.clone(),
+            db,
             user_name.clone(),
             ipaddr.clone(),
             "1",
@@ -158,7 +158,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
         .is_err()
     {
         record_login_log(
-            state.db.clone(),
+            db.clone(),
             user_name.clone(),
             addr.ip().to_string(),
             "1",
@@ -193,7 +193,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Extension(addr): Extensio
     };
 
     // 使用 .insert() 将用户数据存入在线缓存。moka 会自动处理 TTL。
-    state.online_user_cache.insert(jti, user_online).await;
+    state.cache.online_user_cache.insert(jti, user_online).await;
     info!("[LOGIN_HANDLER] 在线用户信息已存入缓存.");
 
     // --- 4. 记录成功日志并返回 ---
@@ -300,6 +300,7 @@ pub async fn get_captcha_image(State(state): State<Arc<AppState>>) -> Json<AjaxR
         // .insert() 是一个异步方法，需要 .await
         // 将答案转为小写存储，以便后续不区分大小写比较
         state
+            .cache
             .captcha_cache
             .insert(uuid.clone(), captcha_text.to_lowercase())
             .await;

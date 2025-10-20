@@ -2,9 +2,12 @@
 
 use super::model::{AddPostVo, ListPostQuery, PostOptionVo, UpdatePostVo};
 use common::{error::AppError, page::TableDataInfo};
-use entity::prelude::SysPostModel;
+use entity::{
+    prelude::{SysPost, SysPostColumn, SysPostModel},
+    sys_post::ActiveModel as SysPostActiveModel,
+};
 use rust_xlsxwriter::Workbook;
-use sea_orm::DatabaseConnection;
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder};
 use sqlx::{Postgres, QueryBuilder};
 use tracing::{error, info, instrument};
 
@@ -96,15 +99,15 @@ pub async fn select_post_list(db: &DatabaseConnection, params: ListPostQuery) ->
 /// 根据ID查询岗位详情
 #[instrument(skip(db))]
 pub async fn select_post_by_id(db: &DatabaseConnection, post_id: i64) -> Result<SysPostModel, AppError> {
-    sqlx::query_as("SELECT * FROM sys_post WHERE post_id = ?")
-        .bind(post_id)
-        .fetch_one(db)
-        .await
-        .map_err(AppError::from)
+    SysPost::find_by_id(post_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::RecordNotFound)
 }
 
 /// 检查岗位名称是否唯一
 async fn check_post_name_unique(db: &DatabaseConnection, post_name: &str, post_id: Option<i64>) -> Result<(), AppError> {
+    let db = db.get_postgres_connection_pool();
     let mut query = QueryBuilder::new("SELECT post_id FROM sys_post WHERE post_name = ");
     query.push_bind(post_name);
     if let Some(id) = post_id {
@@ -120,6 +123,7 @@ async fn check_post_name_unique(db: &DatabaseConnection, post_name: &str, post_i
 
 /// 检查岗位编码是否唯一
 async fn check_post_code_unique(db: &DatabaseConnection, post_code: &str, post_id: Option<i64>) -> Result<(), AppError> {
+    let db = db.get_postgres_connection_pool();
     let mut query = QueryBuilder::new("SELECT post_id FROM sys_post WHERE post_code = ");
     query.push_bind(post_code);
     if let Some(id) = post_id {
@@ -135,43 +139,62 @@ async fn check_post_code_unique(db: &DatabaseConnection, post_code: &str, post_i
 
 /// 新增岗位
 #[instrument(skip(db, data, operator))]
-pub async fn add_post(db: &DatabaseConnection, data: AddPostVo, operator: &str) -> Result<u64, AppError> {
+pub async fn add_post(db: &DatabaseConnection, data: AddPostVo, operator: &str) -> Result<i64, AppError> {
     check_post_name_unique(db, &data.post_name, None).await?;
     check_post_code_unique(db, &data.post_code, None).await?;
 
-    let result = sqlx::query("INSERT INTO sys_post (post_code, post_name, post_sort, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .bind(data.post_code)
-        .bind(data.post_name)
-        .bind(data.post_sort)
-        .bind(data.status)
-        .bind(data.remark)
-        .bind(operator)
-        .bind(chrono::Local::now().naive_local())
-        .execute(db)
-        .await?;
+    let mut model: SysPostActiveModel = data.into();
+    model.create_by = Set(Some(operator.to_string()));
+    model.create_time = Set(Some(chrono::Local::now().naive_local()));
+    model.update_by = Set(None);
+    model.update_time = Set(Some(chrono::Local::now().naive_local()));
 
-    Ok(result.rows_affected())
+    let result = model.insert(db).await?;
+
+    // let result = sqlx::query("INSERT INTO sys_post (post_code, post_name, post_sort, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    //     .bind(data.post_code)
+    //     .bind(data.post_name)
+    //     .bind(data.post_sort)
+    //     .bind(data.status)
+    //     .bind(data.remark)
+    //     .bind(operator)
+    //     .bind(chrono::Local::now().naive_local())
+    //     .execute(db)
+    //     .await?;
+
+    Ok(result.post_id)
 }
 
 /// 修改岗位
 #[instrument(skip(db, data, operator))]
-pub async fn update_post(db: &DatabaseConnection, data: UpdatePostVo, operator: &str) -> Result<u64, AppError> {
+pub async fn update_post(db: &DatabaseConnection, data: UpdatePostVo, operator: &str) -> Result<(), AppError> {
     check_post_name_unique(db, &data.post_name, Some(data.post_id)).await?;
     check_post_code_unique(db, &data.post_code, Some(data.post_id)).await?;
 
-    let result = sqlx::query("UPDATE sys_post SET post_code=?, post_name=?, post_sort=?, status=?, remark=?, update_by=?, update_time=? WHERE post_id = ?")
-        .bind(data.post_code)
-        .bind(data.post_name)
-        .bind(data.post_sort)
-        .bind(data.status)
-        .bind(data.remark)
-        .bind(operator)
-        .bind(chrono::Local::now().naive_local())
-        .bind(data.post_id)
-        .execute(db)
-        .await?;
+    let exist = select_post_by_id(db, data.post_id).await?;
+    let mut model: SysPostActiveModel = exist.into_active_model();
+    model.post_code = Set(data.post_code);
+    model.post_name = Set(data.post_name);
+    model.post_sort = Set(data.post_sort);
+    model.status = Set(data.status);
+    model.remark = Set(data.remark);
+    model.update_by = Set(Some(operator.to_string()));
+    model.update_time = Set(Some(chrono::Local::now().naive_local()));
+    let _ = model.update(db).await?;
 
-    Ok(result.rows_affected())
+    // let result = sqlx::query("UPDATE sys_post SET post_code=?, post_name=?, post_sort=?, status=?, remark=?, update_by=?, update_time=? WHERE post_id = ?")
+    //     .bind(data.post_code)
+    //     .bind(data.post_name)
+    //     .bind(data.post_sort)
+    //     .bind(data.status)
+    //     .bind(data.remark)
+    //     .bind(operator)
+    //     .bind(chrono::Local::now().naive_local())
+    //     .bind(data.post_id)
+    //     .execute(db)
+    //     .await?;
+
+    Ok(())
 }
 
 /// 批量删除岗位 (物理删除)
@@ -184,34 +207,48 @@ pub async fn delete_post_by_ids(db: &DatabaseConnection, post_ids: &[i64]) -> Re
     // RuoYi Java后台会检查岗位是否已分配给用户，这里为了简化，我们先直接删除。
     // 生产环境中应增加此校验。
 
-    let mut query_builder = QueryBuilder::new("DELETE FROM sys_post WHERE post_id IN (");
-    let mut separated = query_builder.separated(",");
-    for id in post_ids {
-        separated.push_bind(*id);
-    }
-    separated.push_unseparated(")");
+    let result = SysPost::delete_many()
+        .filter(SysPostColumn::PostId.is_in(post_ids.to_vec()))
+        .exec(db)
+        .await?;
 
-    let result = query_builder.build().execute(db).await?;
-    Ok(result.rows_affected())
+    // let mut query_builder = QueryBuilder::new("DELETE FROM sys_post WHERE post_id IN (");
+    // let mut separated = query_builder.separated(",");
+    // for id in post_ids {
+    //     separated.push_bind(*id);
+    // }
+    // separated.push_unseparated(")");
+
+    // let result = query_builder.build().execute(db).await?;
+    Ok(result.rows_affected)
 }
 
 /// 获取所有启用的岗位作为下拉选项
 #[instrument(skip(db))]
 pub async fn select_all_posts_options(db: &DatabaseConnection) -> Result<Vec<PostOptionVo>, AppError> {
     info!("[SERVICE] Fetching all enabled posts for dropdown options.");
-    let posts = sqlx::query_as("SELECT post_id, post_name FROM sys_post WHERE status = '0' ORDER BY post_sort ASC")
-        .fetch_all(db)
-        .await?;
-    Ok(posts)
+    let posts = select_post_all(db).await?;
+    Ok(posts
+        .into_iter()
+        .map(|post| PostOptionVo {
+            post_id: post.post_id,
+            post_name: post.post_name,
+        })
+        .collect())
 }
 
 /// 查询所有状态正常的岗位 (用于下拉框)
 #[instrument(skip(db))]
 pub async fn select_post_all(db: &DatabaseConnection) -> Result<Vec<SysPostModel>, AppError> {
     info!("[SERVICE] Fetching all enabled posts.");
-    let posts = sqlx::query_as("SELECT * FROM sys_post WHERE status = '0' ORDER BY post_sort ASC")
-        .fetch_all(db)
+    let posts = SysPost::find()
+        .filter(SysPostColumn::Status.eq("0"))
+        .order_by_asc(SysPostColumn::PostSort)
+        .all(db)
         .await?;
+    // let posts = sqlx::query_as("SELECT * FROM sys_post WHERE status = '0' ORDER BY post_sort ASC")
+    //     .fetch_all(db)
+    //     .await?;
     Ok(posts)
 }
 
@@ -230,6 +267,7 @@ pub async fn export_post_list(db: &DatabaseConnection, params: ListPostQuery) ->
         params
     );
 
+    let db = db.get_postgres_connection_pool();
     // 1. 查询所有符合条件的数据（注意：导出不分页）
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_post WHERE 1=1");
     // (这里的查询条件构建逻辑与 select_post_list 完全相同，只是没有分页)

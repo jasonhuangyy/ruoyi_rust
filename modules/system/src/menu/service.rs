@@ -1,9 +1,11 @@
 use super::model::{AddMenuVo, MenuTreeSelectVo, MenuTreeVo, UpdateMenuVo};
 use common::error::AppError;
-use entity::prelude::{SysMenu, SysMenuColumn, SysMenuModel};
-use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter};
-use sea_orm::{DatabaseConnection, QueryOrder};
-use sqlx::QueryBuilder;
+use entity::{
+    prelude::{SysMenu, SysMenuColumn, SysMenuModel},
+    sys_menu::ActiveModel as SysMenuActiveModel,
+};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder};
+use sqlx::{Postgres, QueryBuilder};
 use tracing::info;
 
 pub async fn select_menu_tree_by_user_id(db: &DatabaseConnection, user_id: i64) -> Result<Vec<MenuTreeVo>, AppError> {
@@ -42,24 +44,24 @@ pub async fn select_menu_tree_by_user_id(db: &DatabaseConnection, user_id: i64) 
         info!("[AUTH] User is not admin, fetching menus based on roles.");
 
         // 将 SQL 字符串字面量直接放入宏中，并绑定参数, 使用 `SELECT DISTINCT m.*` 对于 `query_as!` 宏总有问题的，必须明确列出所有字段。
-        menus = sqlx::query_as!(
-            SysMenu,
-            "SELECT DISTINCT
+        menus = sqlx::query_as::<_, SysMenuModel>(
+            "SELECT 
                 m.menu_id, m.menu_name, m.parent_id, m.order_num, m.path, m.component, m.query,
                 m.route_name, m.is_frame, m.is_cache, m.menu_type, m.visible, m.status,
                 m.perms, m.icon, m.create_by, m.create_time, m.update_by, m.update_time, m.remark
-            FROM sys_menu m
-            LEFT JOIN sys_role_menu rm ON m.menu_id = rm.menu_id
-            LEFT JOIN sys_user_role ur ON rm.role_id = ur.role_id
-            LEFT JOIN sys_role r ON ur.role_id = r.role_id
-            WHERE ur.user_id = ?
-              AND m.menu_type IN ('M', 'C')
-              AND m.status = '0'
-              AND r.status = '0'
-            ORDER BY m.parent_id, m.order_num",
-            user_id
+            FROM sys_menu m 
+            where m.menu_type IN ('M', 'C') and m.status = '0' and m.menu_id in (
+                SELECT rm.menu_id 
+                    FROM sys_role_menu rm
+                    LEFT JOIN sys_user_role ur ON rm.role_id = ur.role_id
+                    LEFT JOIN sys_role r ON ur.role_id = r.role_id
+                WHERE ur.user_id = ?
+                AND m.status = '0'
+            )
+        ORDER BY m.parent_id, m.order_num",
         )
-        .fetch_all(db)
+        .bind(user_id)
+        .fetch_all(db.get_postgres_connection_pool())
         .await?;
     }
 
@@ -73,20 +75,26 @@ pub async fn select_menu_tree_by_user_id(db: &DatabaseConnection, user_id: i64) 
     Ok(menu_tree)
 }
 
-pub async fn select_menu_list(db: &DatabaseConnection) -> Result<Vec<SysMenu>, AppError> {
+pub async fn select_menu_list(db: &DatabaseConnection) -> Result<Vec<SysMenuModel>, AppError> {
     // 添加 WHERE 子句，只查询目录和菜单，过滤掉按钮。 与 RuoYi 菜单管理页面的行为保持一致。
-    let menus = sqlx::query_as!(
-        SysMenu,
-        "SELECT * FROM sys_menu ORDER BY parent_id, order_num"
-    )
-    .fetch_all(db)
-    .await?;
+    let menus = SysMenu::find()
+        .order_by_asc(SysMenuColumn::ParentId)
+        .order_by_asc(SysMenuColumn::OrderNum)
+        .all(db)
+        .await?;
+
+    // let menus = sqlx::query_as!(
+    //     SysMenu,
+    //     "SELECT * FROM sys_menu ORDER BY parent_id, order_num"
+    // )
+    // .fetch_all(db)
+    // .await?;
 
     Ok(menus)
 }
 
-pub async fn select_menu_list_with_params(db: &MySqlPool, menu_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysMenu>, AppError> {
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new("SELECT * FROM sys_menu WHERE 1=1 ");
+pub async fn select_menu_list_with_params(db: &DatabaseConnection, menu_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysMenuModel>, AppError> {
+    let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_menu WHERE 1=1 ");
 
     if let Some(name) = menu_name {
         if !name.trim().is_empty() {
@@ -103,7 +111,10 @@ pub async fn select_menu_list_with_params(db: &MySqlPool, menu_name: Option<&str
 
     query_builder.push(" ORDER BY parent_id, order_num");
 
-    let menus = query_builder.build_query_as().fetch_all(db).await?;
+    let menus = query_builder
+        .build_query_as()
+        .fetch_all(db.get_postgres_connection_pool())
+        .await?;
     Ok(menus)
 }
 
@@ -124,91 +135,121 @@ pub async fn select_menu_by_id(db: &DatabaseConnection, menu_id: i64) -> Result<
 }
 
 /// 新增菜单
-pub async fn add_menu(db: &DatabaseConnection, menu: AddMenuVo) -> Result<u64, AppError> {
-    let is_frame_num: i32 = menu.is_frame;
-    let is_cache_num: i32 = menu.is_cache;
+pub async fn add_menu(db: &DatabaseConnection, menu: AddMenuVo) -> Result<i64, AppError> {
+    // let is_frame_num: i32 = menu.is_frame;
+    // let is_cache_num: i32 = menu.is_cache;
 
-    let result = sqlx::query!(
-        r#"
-            INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, is_frame, is_cache, menu_type, visible, status, perms, icon, remark, create_by, create_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())
-        "#,
-        menu.menu_name,
-        menu.parent_id,
-        menu.order_num,
-        menu.path,
-        menu.component,
-        is_frame_num,
-        is_cache_num,
-        menu.menu_type,
-        menu.visible,
-        menu.status,
-        menu.perms,
-        menu.icon,
-        menu.remark
-    )
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected())
+    let model: SysMenuActiveModel = menu.into();
+    let model = model.insert(db).await?;
+
+    // let result = sqlx::query!(
+    //     r#"
+    //         INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, is_frame, is_cache, menu_type, visible, status, perms, icon, remark, create_by, create_time)
+    //         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())
+    //     "#,
+    //     menu.menu_name,
+    //     menu.parent_id,
+    //     menu.order_num,
+    //     menu.path,
+    //     menu.component,
+    //     is_frame_num,
+    //     is_cache_num,
+    //     menu.menu_type,
+    //     menu.visible,
+    //     menu.status,
+    //     menu.perms,
+    //     menu.icon,
+    //     menu.remark
+    // )
+    // .execute(db)
+    // .await?;
+    Ok(model.menu_id)
 }
 
 /// 修改菜单
-pub async fn update_menu(db: &DatabaseConnection, menu: UpdateMenuVo) -> Result<u64, AppError> {
-    let is_frame_num: i32 = menu.is_frame;
-    let is_cache_num: i32 = menu.is_cache;
+pub async fn update_menu(db: &DatabaseConnection, menu: UpdateMenuVo) -> Result<(), AppError> {
+    let mut exist = select_menu_by_id(db, menu.menu_id)
+        .await?
+        .into_active_model();
+    exist.menu_name = Set(menu.menu_name);
+    exist.parent_id = Set(menu.parent_id);
+    exist.order_num = Set(menu.order_num);
+    exist.path = Set(menu.path);
+    exist.component = Set(menu.component);
+    exist.is_frame = Set(menu.is_frame == 1);
+    exist.is_cache = Set(menu.is_cache == 1);
+    exist.menu_type = Set(Some(menu.menu_type));
+    exist.visible = Set(menu.visible);
+    exist.status = Set(Some(menu.status));
+    exist.perms = Set(menu.perms);
+    exist.icon = Set(menu.icon);
+    exist.remark = Set(menu.remark);
 
-    let result = sqlx::query!(
-        r#"
-            UPDATE sys_menu
-            SET menu_name = ?, parent_id = ?, order_num = ?, path = ?, component = ?, is_frame = ?, is_cache = ?, menu_type = ?, visible = ?, status = ?, perms = ?, icon = ?, remark = ?, update_by = 'admin', update_time = NOW()
-            WHERE menu_id = ?
-        "#,
-        menu.menu_name,
-        menu.parent_id,
-        menu.order_num,
-        menu.path,
-        menu.component,
-        is_frame_num,
-        is_cache_num,
-        menu.menu_type,
-        menu.visible,
-        menu.status,
-        menu.perms,
-        menu.icon,
-        menu.remark,
-        menu.menu_id
-    )
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected())
+    let result = exist.update(db).await?;
+
+    // let is_frame_num: i32 = menu.is_frame;
+    // let is_cache_num: i32 = menu.is_cache;
+
+    // let result = sqlx::query!(
+    //     r#"
+    //         UPDATE sys_menu
+    //         SET menu_name = ?, parent_id = ?, order_num = ?, path = ?, component = ?, is_frame = ?, is_cache = ?, menu_type = ?, visible = ?, status = ?, perms = ?, icon = ?, remark = ?, update_by = 'admin', update_time = NOW()
+    //         WHERE menu_id = ?
+    //     "#,
+    //     menu.menu_name,
+    //     menu.parent_id,
+    //     menu.order_num,
+    //     menu.path,
+    //     menu.component,
+    //     is_frame_num,
+    //     is_cache_num,
+    //     menu.menu_type,
+    //     menu.visible,
+    //     menu.status,
+    //     menu.perms,
+    //     menu.icon,
+    //     menu.remark,
+    //     menu.menu_id
+    // )
+    // .execute(db)
+    // .await?;
+    Ok(())
 }
 
 /// 删除菜单
 pub async fn delete_menu_by_id(db: &DatabaseConnection, menu_id: i64) -> Result<u64, AppError> {
     // RuoYi 删除菜单时会检查是否有子菜单，我们暂时简化
-    let result = sqlx::query!("DELETE FROM sys_menu WHERE menu_id = ?", menu_id)
-        .execute(db)
-        .await?;
-    Ok(result.rows_affected())
+    let result = SysMenu::delete_by_id(menu_id).exec(db).await?;
+
+    // let result = sqlx::query!("DELETE FROM sys_menu WHERE menu_id = ?", menu_id)
+    //     .execute(db)
+    //     .await?;
+    Ok(result.rows_affected)
 }
 
 /// 查询所有菜单，用于构建菜单选择树
-pub async fn select_menu_list_for_treeselect(db: &DatabaseConnection) -> Result<Vec<SysMenu>, AppError> {
+pub async fn select_menu_list_for_treeselect(db: &DatabaseConnection) -> Result<Vec<SysMenuModel>, AppError> {
     // 关键区别：这里需要获取所有类型的菜单（M, C, F），而不仅仅是 M 和 C
     // 并且只选择状态正常的菜单
     info!("[SERVICE] Entering select_menu_list_for_treeselect");
-    let menus = sqlx::query_as!(
-        SysMenu,
-        "SELECT * FROM sys_menu WHERE status = '0' ORDER BY parent_id, order_num"
-    )
-    .fetch_all(db)
-    .await?;
+    // let menus = sqlx::query_as!(
+    //     SysMenu,
+    //     "SELECT * FROM sys_menu WHERE status = '0' ORDER BY parent_id, order_num"
+    // )
+    // .fetch_all(db)
+    // .await?;
+    let menus = SysMenu::find()
+        .filter(SysMenuColumn::Status.eq("0"))
+        .order_by_asc(SysMenuColumn::ParentId)
+        .order_by_asc(SysMenuColumn::OrderNum)
+        .all(db)
+        .await?;
     info!("[DB_RESULT] Found {} menus for treeselect.", menus.len());
     Ok(menus)
 }
 
 /// 辅助函数：将菜单的扁平列表构建成树形结构
-pub fn build_menu_tree(menus: Vec<SysMenu>) -> Vec<MenuTreeVo> {
+pub fn build_menu_tree(menus: Vec<SysMenuModel>) -> Vec<MenuTreeVo> {
     // 1. 将所有 SysMenu 转换为 MenuTreeVo
     let mut all_nodes: Vec<MenuTreeVo> = menus
         .into_iter()
@@ -266,7 +307,7 @@ fn build_children_for_menu(parent: &mut MenuTreeVo, all_nodes: &mut Vec<MenuTree
 }
 
 /// 辅助函数：将扁平的 SysMenu 列表构建成前端需要的 MenuTreeSelectVo 树形结构
-pub fn build_menu_treeselect(menus: Vec<SysMenu>) -> Vec<MenuTreeSelectVo> {
+pub fn build_menu_treeselect(menus: Vec<SysMenuModel>) -> Vec<MenuTreeSelectVo> {
     // 复用已经绝对正确的 build_menu_tree 逻辑
     let menu_tree_vo = build_menu_tree(menus);
     // 然后进行一次简单的转换

@@ -1,13 +1,13 @@
 use crate::role::model::{AddRoleVo, ChangeStatusVo, ListRoleQuery, UpdateRoleVo};
 use common::{error::AppError, page::TableDataInfo};
-use entity::prelude::{SysRole, SysRoleColumn, SysRoleMenu, SysRoleMenuModel, SysRoleModel};
+use entity::prelude::{SysRole, SysRoleColumn, SysRoleMenu, SysRoleMenuColumn, SysRoleMenuModel, SysRoleModel};
 use rust_xlsxwriter::Workbook;
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
-    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel, TransactionTrait,
+    ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, TransactionTrait,
 };
-use sqlx::{Postgres, QueryBuilder, Transaction};
+use sqlx::{Postgres, QueryBuilder};
 use tracing::{error, info, instrument};
 
 /// 查询角色列表（分页）
@@ -250,28 +250,39 @@ pub async fn delete_role_by_ids(db: &DatabaseConnection, role_ids: Vec<i64>) -> 
         "[SERVICE] Entering delete_role_by_ids with ids: {:?}",
         role_ids
     );
-    let mut tx = db.begin().await?;
+    let tx = db.begin().await?;
     info!("[TX] Transaction started for deleting roles.");
 
-    let params = role_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let result = SysRole::update_many()
+        .col_expr(SysRoleColumn::DelFlag, "2".into())
+        .filter(SysRoleColumn::RoleId.is_in(role_ids.clone()))
+        .exec(&tx)
+        .await?;
 
-    let sql_role = format!(
-        "UPDATE sys_role SET del_flag = '2' WHERE role_id IN ({})",
-        params
-    );
-    let mut query_role = sqlx::query(&sql_role);
-    for id in &role_ids {
-        query_role = query_role.bind(id);
-    }
-    let result = query_role.execute(&mut *tx).await?;
-    info!("[TX] Logically deleted roles from sys_role: {:?}", role_ids);
+    // let params = role_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
-    let sql_menu = format!("DELETE FROM sys_role_menu WHERE role_id IN ({})", params);
-    let mut query_menu = sqlx::query(&sql_menu);
-    for id in &role_ids {
-        query_menu = query_menu.bind(id);
-    }
-    query_menu.execute(&mut *tx).await?;
+    // let sql_role = format!(
+    //     "UPDATE sys_role SET del_flag = '2' WHERE role_id IN ({})",
+    //     params
+    // );
+    // let mut query_role = sqlx::query(&sql_role);
+    // for id in &role_ids {
+    //     query_role = query_role.bind(id);
+    // }
+    // let result = query_role.execute(&mut *tx).await?;
+    // info!("[TX] Logically deleted roles from sys_role: {:?}", role_ids);
+
+    SysRoleMenu::delete_many()
+        .filter(SysRoleMenuColumn::RoleId.is_in(role_ids.clone()))
+        .exec(&tx)
+        .await?;
+
+    // let sql_menu = format!("DELETE FROM sys_role_menu WHERE role_id IN ({})", params);
+    // let mut query_menu = sqlx::query(&sql_menu);
+    // for id in &role_ids {
+    //     query_menu = query_menu.bind(id);
+    // }
+    // query_menu.execute(&mut *tx).await?;
     info!(
         "[TX] Deleted menu associations from sys_role_menu for roles: {:?}",
         role_ids
@@ -279,22 +290,28 @@ pub async fn delete_role_by_ids(db: &DatabaseConnection, role_ids: Vec<i64>) -> 
 
     tx.commit().await?;
     info!("[TX] Transaction committed for deleting roles.");
-    Ok(result.rows_affected())
+    Ok(result.rows_affected)
 }
 
 /// 修改角色状态
 pub async fn change_role_status(db: &DatabaseConnection, vo: ChangeStatusVo) -> Result<u64, AppError> {
-    info!("[SERVICE] Entering change_role_status with vo: {:?}", vo);
-    let result = sqlx::query("UPDATE sys_role SET status = $1 WHERE role_id = $2")
-        .bind(vo.status)
-        .bind(vo.role_id)
-        .execute(db.get_postgres_connection_pool())
+    let result = SysRole::update_many()
+        .col_expr(SysRoleColumn::Status, vo.status.clone().into())
+        .filter(SysRoleColumn::RoleId.eq(vo.role_id))
+        .exec(db)
         .await?;
-    info!(
-        "[DB_RESULT] Changed status for role_id: {} to {}",
-        vo.role_id, vo.status
-    );
-    Ok(result.rows_affected())
+
+    // info!("[SERVICE] Entering change_role_status with vo: {:?}", vo);
+    // let result = sqlx::query("UPDATE sys_role SET status = $1 WHERE role_id = $2")
+    //     .bind(vo.status)
+    //     .bind(vo.role_id)
+    //     .execute(db.get_postgres_connection_pool())
+    //     .await?;
+    // info!(
+    //     "[DB_RESULT] Changed status for role_id: {} to {}",
+    //     vo.role_id, vo.status
+    // );
+    Ok(result.rows_affected)
 }
 
 /// 辅助函数：在事务中插入角色与菜单的关联记录
@@ -305,23 +322,25 @@ async fn insert_role_menu(tx: &DatabaseTransaction, role_id: i64, menu_ids: &[i6
         role_id
     );
 
-    for menu_id in menu_ids {
-        let model = SysRoleMenuModel {
+    let models = menu_ids.into_iter().map(|menu_id| {
+        SysRoleMenuModel {
             role_id: role_id,
             menu_id: *menu_id,
         }
-        .into_active_model();
-        model.insert(&mut **tx).await?;
-    }
-    // 构建批量插入的SQL
-    let mut sql = "INSERT INTO sys_role_menu (role_id, menu_id) VALUES ".to_string();
-    let mut values = Vec::new();
-    for menu_id in menu_ids {
-        values.push(format!("({}, {})", role_id, menu_id));
-    }
-    sql.push_str(&values.join(", "));
+        .into_active_model()
+    });
 
-    sqlx::query(&sql).execute(&mut **tx).await?;
+    SysRoleMenu::insert_many(models).exec(tx).await?;
+
+    // 构建批量插入的SQL
+    // let mut sql = "INSERT INTO sys_role_menu (role_id, menu_id) VALUES ".to_string();
+    // let mut values = Vec::new();
+    // for menu_id in menu_ids {
+    //     values.push(format!("({}, {})", role_id, menu_id));
+    // }
+    // sql.push_str(&values.join(", "));
+
+    // sqlx::query(&sql).execute(&mut **tx).await?;
     info!("[TX_HELPER] Successfully inserted menu associations.");
     Ok(())
 }
@@ -335,16 +354,24 @@ pub async fn select_role_ids_by_keys(db: &DatabaseConnection, role_keys: &[Strin
         return Err(AppError::ValidationFailed(msg.to_string()));
     }
 
-    let mut query_builder = QueryBuilder::new("SELECT role_id FROM sys_role WHERE role_key IN (");
+    let role_ids: Vec<i64> = SysRole::find()
+        .filter(SysRoleColumn::RoleKey.is_in(role_keys.clone()))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|row| row.role_id)
+        .collect();
 
-    let mut separated = query_builder.separated(", ");
-    for key in role_keys {
-        separated.push_bind(key);
-    }
-    separated.push_unseparated(")");
+    // let mut query_builder = QueryBuilder::new("SELECT role_id FROM sys_role WHERE role_key IN (");
 
-    let query = query_builder.build_query_scalar();
-    let role_ids = query.fetch_all(db).await?;
+    // let mut separated = query_builder.separated(", ");
+    // for key in role_keys {
+    //     separated.push_bind(key);
+    // }
+    // separated.push_unseparated(")");
+
+    // let query = query_builder.build_query_scalar();
+    // let role_ids = query.fetch_all(db).await?;
 
     info!(
         "[SERVICE_ROLE] Found {} role IDs for keys: {:?}",
@@ -366,12 +393,19 @@ pub async fn select_role_ids_by_keys(db: &DatabaseConnection, role_keys: &[Strin
 ///
 /// 此函数专为用户管理、角色分配等需要全量角色列表的场景设计。
 #[instrument(skip(db))]
-pub async fn select_all_active_roles(db: &DatabaseConnection) -> Result<Vec<SysRole>, AppError> {
+pub async fn select_all_active_roles(db: &DatabaseConnection) -> Result<Vec<SysRoleModel>, AppError> {
     info!("[SERVICE] Entering select_all_active_roles");
 
-    let roles: Vec<SysRole> = sqlx::query_as("SELECT * FROM sys_role WHERE status = '0' AND del_flag = '0' ORDER BY role_sort")
-        .fetch_all(db)
+    let roles: Vec<SysRoleModel> = SysRole::find()
+        .filter(SysRoleColumn::Status.eq("0"))
+        .filter(SysRoleColumn::DelFlag.eq("0"))
+        .order_by_asc(SysRoleColumn::RoleSort)
+        .all(db)
         .await?;
+
+    // let roles: Vec<SysRole> = sqlx::query_as("SELECT * FROM sys_role WHERE status = '0' AND del_flag = '0' ORDER BY role_sort")
+    //     .fetch_all(db)
+    //     .await?;
 
     info!("[DB_RESULT] Found {} active roles.", roles.len());
     Ok(roles)
@@ -383,6 +417,8 @@ pub async fn export_role_list(db: &DatabaseConnection, params: ListRoleQuery) ->
         "[SERVICE] Starting role list export with params: {:?}",
         params
     );
+
+    let db = db.get_postgres_connection_pool();
 
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new("SELECT * FROM sys_role WHERE del_flag = '0'");
 
@@ -425,7 +461,7 @@ pub async fn export_role_list(db: &DatabaseConnection, params: ListRoleQuery) ->
 
     query_builder.push(" ORDER BY role_sort");
 
-    let roles: Vec<SysRole> = query_builder.build_query_as().fetch_all(db).await?;
+    let roles: Vec<SysRoleModel> = query_builder.build_query_as().fetch_all(db).await?;
     info!("[DB_RESULT] Fetched {} roles for export.", roles.len());
 
     let mut workbook = Workbook::new();

@@ -27,7 +27,7 @@ pub async fn get_profile(State(state): State<Arc<AppState>>, Extension(claims): 
         "[HANDLER] Entering user::get_profile for user_id: {}",
         claims.user_id
     );
-    let profile_data = service::get_user_profile(&state.db_pool, claims.user_id).await?;
+    let profile_data = service::get_user_profile(&state.db, claims.user_id).await?;
     // 使用 AjaxResult::success 包装，它会自动将字段拍平
     Ok(Json(AjaxResult::success(profile_data)))
 }
@@ -38,7 +38,7 @@ pub async fn update_pwd(State(state): State<Arc<AppState>>, Extension(claims): E
         "[HANDLER] Entering user::update_pwd for user_id: {}",
         claims.user_id
     );
-    service::update_user_pwd(&state.db_pool, claims.user_id, body).await?;
+    service::update_user_pwd(&state.db, claims.user_id, body).await?;
     Ok(Json(AjaxResult::<()>::success_msg("修改成功")))
 }
 
@@ -49,7 +49,7 @@ pub async fn update_pwd(State(state): State<Arc<AppState>>, Extension(claims): E
 // #[require_permission(any = [Permission::UserList, "system:user:query"])]
 pub async fn list(State(state): State<Arc<AppState>>, Extension(_claims): Extension<ClaimsData>, Query(params): Query<ListUserQuery>) -> Result<Json<TableDataInfo<UserListVo>>, AppError> {
     info!("[HANDLER] Entering user::list with params: {:?}", params);
-    let list_data = service::select_user_list(&state.db_pool, params).await?;
+    let list_data = service::select_user_list(&state.db, params).await?;
     Ok(Json(list_data))
 }
 
@@ -61,7 +61,7 @@ pub async fn get_add_user_init_data(State(state): State<Arc<AppState>>) -> Resul
     // 1. 查询所有可用的角色列表
     // 复用之前的逻辑，查询全量、非分页的角色列表
     let all_roles = role_service::select_role_list(
-        &state.db_pool,
+        &state.db,
         // 传入一个默认的查询参数，表示查询所有
         crate::role::model::ListRoleQuery {
             ..Default::default()
@@ -69,7 +69,7 @@ pub async fn get_add_user_init_data(State(state): State<Arc<AppState>>) -> Resul
     )
     .await?
     .rows;
-    let all_posts = post::service::select_post_all(&state.db_pool).await?;
+    let all_posts = post::service::select_post_all(&state.db).await?;
 
     // 2. 组装成前端期望的 UserDetailVo 结构
     // `data` 字段为 null 或一个空的 SysUser 对象，`role_ids` 为空数组。
@@ -95,17 +95,15 @@ pub async fn get_detail(State(state): State<Arc<AppState>>, Path(user_id): Path<
     // 4. 查询所有可用的岗位列表
     // 5. 查询当前用户已关联的岗位ID
     // 6. 组装成前端需要的 UserDetailVo 结构
-    let user_data = service::select_user_by_id(&state.db_pool, user_id)
-        .await
-        .ok();
-    let all_roles = role_service::select_role_list(&state.db_pool, Default::default())
+    let user_data = service::select_user_by_id(&state.db, user_id).await.ok();
+    let all_roles = role_service::select_role_list(&state.db, Default::default())
         .await?
         .rows;
-    let role_ids = service::select_role_ids_by_user_id(&state.db_pool, user_id).await?;
+    let role_ids = service::select_role_ids_by_user_id(&state.db, user_id).await?;
 
-    let all_posts = post::service::select_post_all(&state.db_pool).await?;
+    let all_posts = post::service::select_post_all(&state.db).await?;
 
-    let post_ids = service::select_post_ids_by_user_id(&state.db_pool, user_id).await?;
+    let post_ids = service::select_post_ids_by_user_id(&state.db, user_id).await?;
 
     let vo = UserDetailVo {
         data: user_data,
@@ -123,7 +121,7 @@ pub async fn add(State(state): State<Arc<AppState>>, DebugJson(body): DebugJson<
     info!("[HANDLER_ADD] Entering clean 'add' handler.");
 
     // 只执行核心业务
-    service::add_user(&state.db_pool, body).await?;
+    service::add_user(&state.db, body).await?;
 
     Ok(Json(AjaxResult::<()>::success_msg("新增成功")))
 }
@@ -131,7 +129,7 @@ pub async fn add(State(state): State<Arc<AppState>>, DebugJson(body): DebugJson<
 /// 修改用户
 pub async fn update(State(state): State<Arc<AppState>>, Json(body): Json<UpdateUserVo>) -> Result<Json<AjaxResult<()>>, AppError> {
     info!("[HANDLER] Entering user::update with body: {:?}", body);
-    service::update_user(&state.db_pool, body).await?;
+    service::update_user(&state.db, body).await?;
     Ok(Json(AjaxResult::<()>::success_msg("修改成功")))
 }
 
@@ -145,7 +143,7 @@ pub async fn delete(State(state): State<Arc<AppState>>, Path(user_ids_str): Path
     if ids.is_empty() {
         return Err(AppError::InvalidCredentials);
     }
-    service::delete_user_by_ids(&state.db_pool, &ids).await?;
+    service::delete_user_by_ids(&state.db, &ids).await?;
     Ok(Json(AjaxResult::<()>::success_msg("删除成功")))
 }
 
@@ -155,7 +153,7 @@ pub async fn change_status(State(state): State<Arc<AppState>>, Json(body): Json<
         "[HANDLER] Entering user::change_status with body: {:?}",
         body
     );
-    service::change_user_status(&state.db_pool, body).await?;
+    service::change_user_status(&state.db, body).await?;
     Ok(Json(AjaxResult::<()>::success_msg("状态修改成功")))
 }
 
@@ -165,7 +163,7 @@ pub async fn reset_pwd(State(state): State<Arc<AppState>>, Json(body): Json<Rese
         "[HANDLER] Entering user::reset_pwd for user_id: {}",
         body.user_id
     );
-    service::reset_user_pwd(&state.db_pool, body).await?;
+    service::reset_user_pwd(&state.db, body).await?;
     Ok(Json(AjaxResult::<()>::success_msg("密码重置成功")))
 }
 
@@ -173,7 +171,7 @@ pub async fn reset_pwd(State(state): State<Arc<AppState>>, Json(body): Json<Rese
 #[instrument(skip(state))]
 pub async fn get_auth_role(State(state): State<Arc<AppState>>, Path(user_id): Path<i64>) -> Result<Json<AuthRoleVo>, AppError> {
     info!("[HANDLER] Entering get_auth_role for user_id: {}", user_id);
-    let vo = service::get_auth_role(&state.db_pool, user_id).await?;
+    let vo = service::get_auth_role(&state.db, user_id).await?;
     // 注意：此接口直接返回业务VO，不包装在AjaxResult中，以匹配前端行为
     Ok(Json(vo))
 }
@@ -185,7 +183,7 @@ pub async fn update_auth_role(State(state): State<Arc<AppState>>, Json(body): Js
         "[HANDLER] Entering update_auth_role for user_id: {}",
         body.user_id
     );
-    service::update_auth_role(&state.db_pool, body).await?;
+    service::update_auth_role(&state.db, body).await?;
     Ok(Json(AjaxResult::<()>::success_msg("授权成功")))
 }
 
@@ -196,7 +194,7 @@ pub async fn update_profile(State(state): State<Arc<AppState>>, Extension(claims
         "[HANDLER] Entering update_profile for current user_id: {}",
         claims.user_id
     );
-    service::update_user_profile(&state.db_pool, claims.user_id, body).await?;
+    service::update_user_profile(&state.db, claims.user_id, body).await?;
     Ok(Json(AjaxResult::<String>::success_msg("修改成功")))
 }
 /// 更新当前登录用户的头像
@@ -211,7 +209,7 @@ pub async fn update_avatar(State(state): State<Arc<AppState>>, Extension(claims)
     if let Some(field) = multipart.next_field().await? {
         if field.name() == Some("avatarfile") {
             let data = field.bytes().await?;
-            let img_url = service::update_user_avatar(&state.db_pool, claims.user_id, &data).await?;
+            let img_url = service::update_user_avatar(&state.db, claims.user_id, &data).await?;
 
             // 返回前端特定的 JSON 格式
             let vo = UpdateAvatarVo {
@@ -235,7 +233,7 @@ pub async fn export(
 ) -> Result<impl IntoResponse, AppError> {
     info!("[HANDLER] Entering user::export with params: {:?}", params);
 
-    let excel_data = service::export_user_list(&state.db_pool, params).await?;
+    let excel_data = service::export_user_list(&state.db, params).await?;
 
     let filename = format!("user_{}.xlsx", chrono::Local::now().format("%Y%m%d%H%M%S"));
 

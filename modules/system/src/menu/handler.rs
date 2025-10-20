@@ -87,7 +87,7 @@ fn build_routers(menu_trees: Vec<MenuTreeVo>) -> Vec<RouterVo> {
 
             // 初始构建 router 对象
             let mut router = RouterVo {
-                hidden: menu.visible.as_deref().unwrap_or("1") == "1",
+                hidden: menu.visible == "1",
                 name: get_route_name(menu),
                 path: get_route_path(menu),
                 component: get_component(menu), // 初始 component 从数据库获取
@@ -96,8 +96,8 @@ fn build_routers(menu_trees: Vec<MenuTreeVo>) -> Vec<RouterVo> {
                 meta: MetaVo {
                     title: menu.menu_name.clone(),
                     icon: menu.icon.clone().unwrap_or_default(),
-                    no_cache: menu.is_cache.unwrap_or_default(),
-                    link: if menu.is_frame.unwrap_or(false) {
+                    no_cache: menu.is_cache,
+                    link: if menu.is_frame {
                         menu.path.clone()
                     } else {
                         None
@@ -180,7 +180,7 @@ fn get_route_name(menu: &SysMenuModel) -> String {
 fn get_route_path(menu: &SysMenuModel) -> String {
     let mut path = menu.path.clone().unwrap_or_default();
     // 如果是外链
-    if menu.is_frame.unwrap_or(false) == false {
+    if menu.is_frame == false {
         return path;
     }
     // 如果是顶级目录

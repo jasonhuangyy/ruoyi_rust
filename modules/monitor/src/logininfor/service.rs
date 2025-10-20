@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::model::ListLogininforQuery;
 use common::error::AppError;
 use common::page::TableDataInfo;
@@ -8,7 +10,7 @@ use sqlx::{Postgres, QueryBuilder};
 use tracing::{info, instrument};
 
 /// 新增一条登录日志记录
-pub async fn add_logininfor(db: &DatabaseConnection, log: SysLogininforModel) -> Result<(), AppError> {
+pub async fn add_logininfor(db: Arc<DatabaseConnection>, log: SysLogininforModel) -> Result<(), AppError> {
     info!(
         "[SERVICE] Preparing to add login information log for user: {:?}",
         log.user_name
@@ -28,7 +30,7 @@ pub async fn add_logininfor(db: &DatabaseConnection, log: SysLogininforModel) ->
     // .execute(db.get_postgres_connection_pool())
     // .await?;
 
-    log.into_active_model().insert(db).await?;
+    log.into_active_model().insert(db.as_ref()).await?;
     info!("[SERVICE] Login information log added successfully.");
     Ok(())
 }

@@ -1,4 +1,5 @@
-use entity::prelude::SysMenuModel;
+use entity::{prelude::SysMenuModel, sys_menu::ActiveModel as SysMenuActiveModel};
+use sea_orm::ActiveValue::{NotSet, Set};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
@@ -70,6 +71,33 @@ pub struct AddMenuVo {
     pub perms: Option<String>,
     pub icon: Option<String>,
     pub remark: Option<String>,
+}
+
+impl Into<SysMenuActiveModel> for AddMenuVo {
+    fn into(self) -> SysMenuActiveModel {
+        SysMenuActiveModel {
+            menu_name: Set(self.menu_name),
+            parent_id: Set(self.parent_id),
+            order_num: Set(self.order_num),
+            path: Set(self.path),
+            component: Set(self.component),
+            is_frame: Set(self.is_frame == 1),
+            is_cache: Set(self.is_cache == 1),
+            menu_type: Set(Some(self.menu_type)),
+            visible: Set(self.visible),
+            status: Set(Some(self.status)),
+            perms: Set(self.perms),
+            icon: Set(self.icon),
+            remark: Set(self.remark),
+            menu_id: NotSet,
+            query: Set(None),
+            route_name: Set(None),
+            create_by: Set(None),
+            create_time: Set(None),
+            update_by: Set(None),
+            update_time: Set(None),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
