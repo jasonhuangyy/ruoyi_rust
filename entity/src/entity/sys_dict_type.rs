@@ -6,6 +6,7 @@ use sqlx::FromRow;
 
 #[derive(FromRow, Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(schema_name = "app", table_name = "sys_dict_type")]
+#[serde(rename_all = "camelCase")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub dict_id: i64,
