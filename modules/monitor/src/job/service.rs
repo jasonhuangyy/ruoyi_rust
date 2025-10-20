@@ -194,7 +194,7 @@ async fn remove_job_from_scheduler(job_id: i64, state: &Arc<AppState>) -> Result
 pub async fn add_job(state: Arc<AppState>, vo: AddJobVo) -> Result<(), AppError> {
     info!("[SERVICE] Entering job::add_job with vo: {:?}", vo);
     let db = state.db.get_postgres_connection_pool();
-    let mut tx = db.begin().await?;
+    let tx = db.begin().await?;
 
     // let result = sqlx::query!(
     //     "INSERT INTO sys_job (job_name, job_group, invoke_target, cron_expression, misfire_policy, concurrent, status, remark, create_by, create_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())",

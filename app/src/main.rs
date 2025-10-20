@@ -5,16 +5,13 @@ use axum::middleware::Next;
 use axum::response::Response;
 use axum::{extract::State, middleware, routing::get, Json, Router};
 use common::error::AppError;
-use common::models::online_model::SysUserOnline;
 use framework::cache::AppCache;
 use framework::jwt::{JwtConfig, JwtUtil};
 use framework::{config::Settings, db, state::AppState};
-use moka::future::Cache;
 use monitor::job;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio_cron_scheduler::JobScheduler;
 use tower_http::services::ServeDir;
@@ -89,10 +86,10 @@ async fn main() -> Result<(), common::error::AppError> {
         // 为上传目录提供静态文件服务, 这个路由必须放在 /prod-api 之外，因为它是一个公共访问路径
         .nest_service("/uploads", ServeDir::new("uploads"))
         // 静态文件服务应该放在最后，作为回退
-        .nest_service(
-            "/",
-            ServeDir::new("dist").fallback(tower_http::services::ServeFile::new("dist/index.html")), //.nest_service("/", ServeDir::new("static").fallback(ServeDir::new("static").append_index_html_on_directories(true)))
-        )
+        // .nest_service(
+        //     "/",
+        //     ServeDir::new("dist").fallback(tower_http::services::ServeFile::new("dist/index.html")), //.nest_service("/", ServeDir::new("static").fallback(ServeDir::new("static").append_index_html_on_directories(true)))
+        // )
         .layer(middleware::from_fn(debug_request_middleware))
         // 调试层
         // TraceLayer 必须放在最外层，才能捕获到所有请求
@@ -124,15 +121,15 @@ async fn health_check() -> &'static str {
 // 使用 State Extractor 从 Axum 中获取共享状态
 async fn test_db_connection(State(state): State<Arc<AppState>>) -> Result<Json<serde_json::Value>, AppError> {
     // 使用 sqlx::query! 宏执行一个简单的查询,这个宏会在编译时检查 SQL 语法和类型
-    let result = sqlx::query("SELECT 1 as result")
-        .fetch_one(&state.db)
+    let result: i64 = sqlx::query_scalar("SELECT 1 as result")
+        .fetch_one(state.db.get_postgres_connection_pool())
         .await?;
 
     // 返回成功响应
     let response = serde_json::json!({
         "code": 200,
         "msg": "数据库连接成功",
-        "data": { "result": result.result }
+        "data": { "result": result }
     });
 
     Ok(Json(response))

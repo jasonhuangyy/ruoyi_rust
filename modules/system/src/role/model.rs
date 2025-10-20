@@ -1,5 +1,5 @@
-use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
+// use chrono::NaiveDateTime;
+use serde::Deserialize;
 
 // /// 角色信息实体，与 `sys_role` 数据库表完全对应。
 // /// `sqlx::FromRow` 使得它可以从数据库查询结果自动映射。

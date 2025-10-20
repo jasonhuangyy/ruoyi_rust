@@ -4,7 +4,7 @@ use entity::prelude::*;
 use framework::state::AppState;
 use rust_xlsxwriter::Workbook;
 use sea_orm::{DatabaseConnection, EntityTrait};
-use sqlx::{PgPool, Postgres, QueryBuilder};
+use sqlx::{Postgres, QueryBuilder};
 use std::sync::Arc;
 use tracing::{error, info, instrument};
 
@@ -135,7 +135,7 @@ pub async fn select_config_value_by_key(state: &Arc<AppState>, config_key: &str)
         "[CACHE_MISS] Config key '{}' not found in cache. Querying database...",
         config_key
     );
-    let config_value: (String,) = sqlx::query_as("select config_value from sys_config where config_key = ?")
+    let config_value: (String,) = sqlx::query_as("select config_value from sys_config where config_key = $1")
         .bind(config_key)
         .fetch_one(db)
         .await

@@ -1,36 +1,34 @@
-use crate::dept::model::SysDept;
-use chrono::NaiveDateTime;
 use entity::{prelude::*, sys_user};
 use sea_orm::ActiveValue::{NotSet, Set};
 use serde::{Deserialize, Serialize};
 
-/// 用户信息实体，与 `sys_user` 数据库表完全对应。
-#[derive(sqlx::FromRow, Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SysUser {
-    pub user_id: i64,
-    pub dept_id: Option<i64>,
-    pub user_name: String,
-    pub nick_name: String,
-    pub user_type: Option<String>,
-    pub email: Option<String>,
-    pub phonenumber: Option<String>,
-    pub sex: Option<String>,
-    pub avatar: Option<String>,
-    #[serde(skip_serializing)] // 密码字段永远不应该被序列化返回给前端
-    pub password: Option<String>,
-    pub status: Option<String>,
-    #[serde(skip_serializing)]
-    pub del_flag: Option<String>,
-    pub login_ip: Option<String>,
-    pub login_date: Option<NaiveDateTime>,
-    pub pwd_update_date: Option<NaiveDateTime>,
-    pub create_by: Option<String>,
-    pub create_time: Option<NaiveDateTime>,
-    pub update_by: Option<String>,
-    pub update_time: Option<NaiveDateTime>,
-    pub remark: Option<String>,
-}
+// /// 用户信息实体，与 `sys_user` 数据库表完全对应。
+// #[derive(sqlx::FromRow, Debug, Serialize, Deserialize, Clone)]
+// #[serde(rename_all = "camelCase")]
+// pub struct SysUser {
+//     pub user_id: i64,
+//     pub dept_id: Option<i64>,
+//     pub user_name: String,
+//     pub nick_name: String,
+//     pub user_type: Option<String>,
+//     pub email: Option<String>,
+//     pub phonenumber: Option<String>,
+//     pub sex: Option<String>,
+//     pub avatar: Option<String>,
+//     #[serde(skip_serializing)] // 密码字段永远不应该被序列化返回给前端
+//     pub password: Option<String>,
+//     pub status: Option<String>,
+//     #[serde(skip_serializing)]
+//     pub del_flag: Option<String>,
+//     pub login_ip: Option<String>,
+//     pub login_date: Option<NaiveDateTime>,
+//     pub pwd_update_date: Option<NaiveDateTime>,
+//     pub create_by: Option<String>,
+//     pub create_time: Option<NaiveDateTime>,
+//     pub update_by: Option<String>,
+//     pub update_time: Option<NaiveDateTime>,
+//     pub remark: Option<String>,
+// }
 
 /// 用户列表查询的参数结构体
 #[derive(Deserialize, Debug)]
@@ -163,7 +161,7 @@ pub struct UserDetailVo {
 #[serde(rename_all = "camelCase")]
 pub struct UserProfileVo {
     // 个人详细信息
-    pub data: SysUser,
+    pub data: SysUserModel,
     // 所属角色组，格式为 "管理员,普通角色"
     pub role_group: String,
     // 所属岗位组，格式为 "董事长,项目经理"
@@ -201,8 +199,8 @@ pub struct UpdateAuthRoleVo {
 #[serde(rename_all = "camelCase")]
 pub struct UserProfileDetailVo {
     #[serde(flatten)]
-    pub user: SysUser,
-    pub dept: Option<SysDept>,
+    pub user: SysUserModel,
+    pub dept: Option<SysDeptModel>,
 }
 
 /// 个人中心-更新基本资料-请求体

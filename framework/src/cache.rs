@@ -15,7 +15,7 @@ impl AppCache {
     /// 初始化缓存,创建一个新的 moka 缓存实例
     /// .time_to_live() 设置了每个条目的存活时间，这里是5分钟，和RuoYi原版保持一致
     /// .max_capacity() 设置了缓存的最大容量，防止内存无限增长
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         // 1. 初始化验证码缓存
         let captcha_cache = Cache::builder()
             .name("captcha_cache") // 给缓存起个名字，方便调试

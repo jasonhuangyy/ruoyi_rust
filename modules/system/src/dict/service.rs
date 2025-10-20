@@ -1,7 +1,7 @@
 use super::model::{AddDictDataVo, AddDictTypeVo, ListDictDataQuery, ListDictTypeQuery, UpdateDictDataVo, UpdateDictTypeVo};
 use common::{constants::cache_keys, error::AppError, page::TableDataInfo};
 use entity::{
-    prelude::{SysDictData, SysDictDataColumn, SysDictDataModel, SysDictType, SysDictTypeColumn, SysDictTypeModel},
+    prelude::{SysDictData, SysDictDataColumn, SysDictDataModel, SysDictType, SysDictTypeModel},
     sys_dict_data, sys_dict_type,
 };
 use moka::future::Cache;

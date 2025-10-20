@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 /// 登录请求体，用于从前端接收JSON数据。
 /// `Deserialize` trait 使得这个结构体可以从JSON格式反序列化而来。
-#[derive(Deserialize, Debug)] 
-pub struct LoginRequest { 
+#[derive(Deserialize, Debug)]
+pub struct LoginRequest {
     pub username: String,
     pub password: String,
     // 验证码的答案
@@ -28,7 +28,7 @@ pub struct SysUser {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptchaVo {
-    pub captcha_enabled:bool,
+    pub captcha_enabled: bool,
     pub uuid: String,
     pub img: String,
 }
@@ -60,10 +60,9 @@ pub struct UserDetailVo {
     pub nick_name: String,
 }
 
-
 /// 路由显示信息 VO (模拟前端的 antd-pro-vue 的路由结构)
 /// 或者说是 RuoYi Vue 的路由结构
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RouterVo {
     // RuoYi 前端的一个特殊设计，对于非外链的顶级菜单，name 通常是 'ParentView'
@@ -83,7 +82,7 @@ pub struct RouterVo {
 }
 
 /// 路由的 meta 信息 VO
-#[derive(Serialize,Clone)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MetaVo {
     pub title: String,

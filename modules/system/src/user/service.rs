@@ -1,15 +1,15 @@
-use super::model::{AddUserVo, AuthRoleVo, ChangeStatusVo, ListUserQuery, ResetPwdVo, SysUser, UpdateAuthRoleVo, UpdateProfileVo, UpdatePwdVo, UpdateUserVo, UserListVo, UserProfileVo};
+use super::model::{AddUserVo, AuthRoleVo, ChangeStatusVo, ListUserQuery, ResetPwdVo, UpdateAuthRoleVo, UpdateProfileVo, UpdatePwdVo, UpdateUserVo, UserListVo, UserProfileVo};
 use argon2::{
     password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
 };
-use chrono::NaiveDateTime;
+use chrono::{Local, NaiveDateTime};
 use common::error::AppError;
 use common::page::TableDataInfo;
 use entity::{prelude::*, sys_user};
 use rust_xlsxwriter::Workbook;
-use sea_orm::{ActiveValue::Set, DatabaseConnection, DatabaseTransaction, TransactionTrait};
-use sqlx::{Postgres, QueryBuilder, Transaction};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter, TransactionTrait};
+use sqlx::{Postgres, QueryBuilder};
 use tracing::{error, info, instrument};
 use uuid::Uuid;
 
@@ -122,12 +122,13 @@ pub async fn select_user_list(db: &DatabaseConnection, params: ListUserQuery) ->
     Ok(TableDataInfo::new(user_list_vo, total.0))
 }
 /// 新增用户，并处理其与角色的关联关系（事务性）
-pub async fn add_user(db: &DatabaseConnection, vo: AddUserVo) -> Result<u64, AppError> {
+pub async fn add_user(db: &DatabaseConnection, vo: AddUserVo) -> Result<i64, AppError> {
     info!("[SERVICE] Entering add_user with vo: {:?}", vo);
-    let mut tx = db.begin().await?;
+    let tx = db.begin().await?;
 
+    let role_ids = vo.role_ids.clone();
     // 密码哈希处理
-    let password = vo.password.ok_or(AppError::InvalidCredentials)?; // 假设密码是必须的
+    let password = vo.password.clone().ok_or(AppError::InvalidCredentials)?; // 假设密码是必须的
     let salt = SaltString::generate(&mut OsRng);
     let password_hash = Argon2::default()
         .hash_password(password.as_bytes(), &salt)
@@ -157,7 +158,7 @@ pub async fn add_user(db: &DatabaseConnection, vo: AddUserVo) -> Result<u64, App
     info!("[TX] Inserted into sys_user, new user_id: {}", user_id);
 
     // 2. 插入用户和角色的关联信息
-    if let Some(role_ids) = vo.role_ids {
+    if let Some(role_ids) = role_ids {
         if !role_ids.is_empty() {
             insert_user_role(&tx, user_id, &role_ids).await?;
         }
@@ -172,39 +173,59 @@ pub async fn add_user(db: &DatabaseConnection, vo: AddUserVo) -> Result<u64, App
 }
 
 /// 修改用户，并处理其与角色的关联关系（事务性）
-pub async fn update_user(db: &DatabaseConnection, vo: UpdateUserVo) -> Result<u64, AppError> {
+pub async fn update_user(db: &DatabaseConnection, vo: UpdateUserVo) -> Result<(), AppError> {
     info!("[SERVICE] Entering update_user with vo: {:?}", vo);
-    let mut tx = db.begin().await?;
+    let tx = db.begin().await?;
+    let exist = SysUser::find_by_id(vo.user_id).one(db).await?;
+    if exist.is_none() {
+        return Err(AppError::RecordNotFound);
+    }
 
     // 1. 更新用户基本信息
-    let result = sqlx::query!(
-        "UPDATE sys_user SET dept_id=?, nick_name=?, phonenumber=?, email=?, sex=?, status=?, remark=?, update_by='admin', update_time=NOW() WHERE user_id=?",
-        vo.dept_id,
-        vo.nick_name,
-        vo.phonenumber,
-        vo.email,
-        vo.sex,
-        vo.status,
-        vo.remark,
-        vo.user_id
-    )
-    .execute(&mut *tx)
-    .await?;
+    let mut model = exist.unwrap().into_active_model();
+    model.dept_id = Set(vo.dept_id);
+    model.nick_name = Set(vo.nick_name);
+    model.phonenumber = Set(vo.phonenumber);
+    model.email = Set(vo.email);
+    model.sex = Set(vo.sex);
+    model.status = Set(vo.status);
+    model.remark = Set(vo.remark);
+    model.update_by = Set(Some("admin".to_string()));
+    model.update_time = Set(Some(Local::now().naive_utc()));
+    model.update(&tx).await?;
+
+    // let result = sqlx::query!(
+    //     "UPDATE sys_user SET dept_id=?, nick_name=?, phonenumber=?, email=?, sex=?, status=?, remark=?, update_by='admin', update_time=NOW() WHERE user_id=?",
+    //     vo.dept_id,
+    //     vo.nick_name,
+    //     vo.phonenumber,
+    //     vo.email,
+    //     vo.sex,
+    //     vo.status,
+    //     vo.remark,
+    //     vo.user_id
+    // )
+    // .execute(&mut *tx)
+    // .await?;
     info!("[TX] Updated sys_user for user_id: {}.", vo.user_id);
 
     // 2. 删除旧的用户角色关联
-    sqlx::query!("DELETE FROM sys_user_role WHERE user_id = ?", vo.user_id)
-        .execute(&mut *tx)
+    SysUserRole::delete_many()
+        .filter(SysUserRoleColumn::UserId.eq(vo.user_id))
+        .exec(&tx)
         .await?;
-    info!(
-        "[TX] Deleted old role associations for user_id: {}.",
-        vo.user_id
-    );
+    // sqlx::query!("DELETE FROM sys_user_role WHERE user_id = ?", vo.user_id)
+    //     .execute(&mut *tx)
+    //     .await?;
+    // info!(
+    //     "[TX] Deleted old role associations for user_id: {}.",
+    //     vo.user_id
+    // );
 
     // 3. 插入新的用户角色关联
     if let Some(role_ids) = vo.role_ids {
         if !role_ids.is_empty() {
-            insert_user_role(&mut tx, vo.user_id, &role_ids).await?;
+            insert_user_role(&tx, vo.user_id, &role_ids).await?;
         }
     }
 
@@ -213,7 +234,7 @@ pub async fn update_user(db: &DatabaseConnection, vo: UpdateUserVo) -> Result<u6
         "[TX] Transaction committed successfully for user_id: {}.",
         vo.user_id
     );
-    Ok(result.rows_affected())
+    Ok(())
 }
 
 /// 根据ID查询用户信息
@@ -222,14 +243,20 @@ pub async fn select_user_by_id(db: &DatabaseConnection, user_id: i64) -> Result<
         "[SERVICE] Entering select_user_by_id with user_id: {}",
         user_id
     );
-    sqlx::query_as!(
-        SysUserModel,
-        "SELECT * FROM sys_user WHERE user_id = ?",
-        user_id
-    )
-    .fetch_one(db)
-    .await
-    .map_err(AppError::from)
+    // sqlx::query_as!(
+    //     SysUserModel,
+    //     "SELECT * FROM sys_user WHERE user_id = ?",
+    //     user_id
+    // )
+    // .fetch_one(db)
+    // .await
+    // .map_err(AppError::from)
+
+    SysUser::find_by_id(user_id)
+        .one(db)
+        .await
+        .map_err(AppError::from)?
+        .ok_or(AppError::RecordNotFound)
 }
 
 /// 根据用户名查询用户信息 (用于登录)
@@ -245,13 +272,19 @@ pub async fn select_user_by_username(db: &DatabaseConnection, user_name: &str) -
         user_name
     );
     // 使用 fetch_optional，因为它在找不到记录时会安全地返回 Ok(None)，而不是返回 Err
-    let user = sqlx::query_as!(
-        SysUserModel,
-        "SELECT * FROM sys_user WHERE user_name = ? AND del_flag = '0'", // 增加 del_flag 判断
-        user_name
-    )
-    .fetch_optional(db)
-    .await?; // `?` 会将 sqlx::Error 转换为 AppError
+    // let user = sqlx::query_as!(
+    //     SysUserModel,
+    //     "SELECT * FROM sys_user WHERE user_name = ? AND del_flag = '0'", // 增加 del_flag 判断
+    //     user_name
+    // )
+    // .fetch_optional(db)
+    // .await?; // `?` 会将 sqlx::Error 转换为 AppError
+
+    let user = SysUser::find()
+        .filter(SysUserColumn::UserName.eq(user_name))
+        .filter(SysUserColumn::DelFlag.eq("0"))
+        .one(db)
+        .await?;
 
     if user.is_some() {
         info!("[DB_RESULT] Found user for user_name: '{}'", user_name);
@@ -270,7 +303,7 @@ pub async fn select_role_ids_by_user_id(db: &DatabaseConnection, user_id: i64) -
     );
     sqlx::query_scalar("SELECT role_id FROM sys_user_role WHERE user_id = ?")
         .bind(user_id)
-        .fetch_all(db)
+        .fetch_all(db.get_postgres_connection_pool())
         .await
         .map_err(AppError::from)
 }
@@ -278,14 +311,19 @@ pub async fn select_role_ids_by_user_id(db: &DatabaseConnection, user_id: i64) -
 /// 修改用户状态
 pub async fn change_user_status(db: &DatabaseConnection, vo: ChangeStatusVo) -> Result<u64, AppError> {
     info!("[SERVICE] Entering change_user_status with vo: {:?}", vo);
-    let result = sqlx::query!(
-        "UPDATE sys_user SET status = ? WHERE user_id = ?",
-        vo.status,
-        vo.user_id
-    )
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected())
+    let result = SysUser::update_many()
+        .col_expr(SysUserColumn::Status, vo.status.into())
+        .filter(SysUserColumn::UserId.eq(vo.user_id))
+        .exec(db)
+        .await?;
+    // let result = sqlx::query!(
+    //     "UPDATE sys_user SET status = ? WHERE user_id = ?",
+    //     vo.status,
+    //     vo.user_id
+    // )
+    // .execute(db)
+    // .await?;
+    Ok(result.rows_affected)
 }
 
 /// 重置用户密码
@@ -299,14 +337,20 @@ pub async fn reset_user_pwd(db: &DatabaseConnection, vo: ResetPwdVo) -> Result<u
         .hash_password(vo.password.as_bytes(), &salt)
         .map_err(|e| AppError::PasswordHashError(e.to_string()))?
         .to_string();
-    let result = sqlx::query!(
-        "UPDATE sys_user SET password = ? WHERE user_id = ?",
-        password_hash,
-        vo.user_id
-    )
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected())
+    // let result = sqlx::query!(
+    //     "UPDATE sys_user SET password = ? WHERE user_id = ?",
+    //     password_hash,
+    //     vo.user_id
+    // )
+    // .execute(db)
+    // .await?;
+    let result = SysUser::update_many()
+        .col_expr(SysUserColumn::Password, password_hash.into())
+        .filter(SysUserColumn::UserId.eq(vo.user_id))
+        .exec(db)
+        .await?;
+
+    Ok(result.rows_affected)
 }
 
 /// 批量删除用户
@@ -315,28 +359,40 @@ pub async fn delete_user_by_ids(db: &DatabaseConnection, user_ids: &[i64]) -> Re
         "[SERVICE] Entering delete_user_by_ids with ids: {:?}",
         user_ids
     );
-    let mut tx = db.begin().await?;
 
-    let params = user_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql_user = format!(
-        "UPDATE sys_user SET del_flag = '2' WHERE user_id IN ({})",
-        params
-    );
-    let mut query_user = sqlx::query(&sql_user);
-    for id in user_ids {
-        query_user = query_user.bind(id);
-    }
-    let result = query_user.execute(&tx).await?;
+    let user_ids = user_ids.to_vec();
+    let tx = db.begin().await?;
 
-    let sql_role = format!("DELETE FROM sys_user_role WHERE user_id IN ({})", params);
-    let mut query_role = sqlx::query(&sql_role);
-    for id in user_ids {
-        query_role = query_role.bind(id);
-    }
-    query_role.execute(&tx).await?;
+    let result = SysUser::update_many()
+        .col_expr(SysUserColumn::DelFlag, "2".into())
+        .filter(SysUserColumn::UserId.is_in(user_ids.clone()))
+        .exec(&tx)
+        .await?;
+
+    // let params = user_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    // let sql_user = format!(
+    //     "UPDATE sys_user SET del_flag = '2' WHERE user_id IN ({})",
+    //     params
+    // );
+    // let mut query_user = sqlx::query(&sql_user);
+    // for id in user_ids {
+    //     query_user = query_user.bind(id);
+    // }
+    // let result = query_user.execute(&tx).await?;
+
+    SysUserRole::delete_many()
+        .filter(SysUserRoleColumn::UserId.is_in(user_ids))
+        .exec(&tx)
+        .await?;
+    // let sql_role = format!("DELETE FROM sys_user_role WHERE user_id IN ({})", params);
+    // let mut query_role = sqlx::query(&sql_role);
+    // for id in user_ids {
+    //     query_role = query_role.bind(id);
+    // }
+    // query_role.execute(&tx).await?;
 
     tx.commit().await?;
-    Ok(result.rows_affected())
+    Ok(result.rows_affected)
 }
 
 async fn insert_user_role(tx: &DatabaseTransaction, user_id: i64, role_ids: &[i64]) -> Result<(), AppError> {
@@ -345,15 +401,29 @@ async fn insert_user_role(tx: &DatabaseTransaction, user_id: i64, role_ids: &[i6
         role_ids.len(),
         user_id
     );
-    let mut sql = "INSERT INTO sys_user_role (user_id, role_id) VALUES ".to_string();
-    sql.push_str(
-        &role_ids
-            .iter()
-            .map(|role_id| format!("({}, {})", user_id, role_id))
-            .collect::<Vec<_>>()
-            .join(", "),
-    );
-    sqlx::query(&sql).execute(&mut **tx).await?;
+
+    let user_role_models = role_ids
+        .iter()
+        .map(|role_id| {
+            SysUserRoleModel {
+                user_id,
+                role_id: *role_id,
+            }
+            .into_active_model()
+        })
+        .collect::<Vec<_>>();
+
+    SysUserRole::insert_many(user_role_models).exec(tx).await?;
+
+    // let mut sql = "INSERT INTO sys_user_role (user_id, role_id) VALUES ".to_string();
+    // sql.push_str(
+    //     &role_ids
+    //         .iter()
+    //         .map(|role_id| format!("({}, {})", user_id, role_id))
+    //         .collect::<Vec<_>>()
+    //         .join(", "),
+    // );
+    // sqlx::query(&sql).execute(tx).await?;
     info!("[TX_HELPER] Successfully inserted role associations.");
     Ok(())
 }
@@ -368,6 +438,7 @@ async fn insert_user_role(tx: &DatabaseTransaction, user_id: i64, role_ids: &[i6
 /// 一个包含角色键字符串的向量 `Vec<String>`
 pub async fn get_user_roles(db: &DatabaseConnection, user_id: i64) -> Result<Vec<String>, AppError> {
     info!("[SERVICE] Entering get_user_roles for user_id: {}", user_id);
+    let db = db.get_postgres_connection_pool();
 
     // RuoYi 的逻辑：如果是管理员(user_id=1)，直接返回 "admin"
     if user_id == 1 {
@@ -414,6 +485,7 @@ pub async fn get_user_permissions(db: &DatabaseConnection, user_id: i64) -> Resu
     );
     info!("[SERVICE_PERM_DEBUG] 准备查询用户 {} 的权限...", user_id); // ★ 调试日志1
     let perms: Vec<String>;
+    let db = db.get_postgres_connection_pool();
 
     // RuoYi 的逻辑：如果是管理员(user_id=1)，拥有所有权限
     if user_id == 1 {
@@ -431,7 +503,7 @@ pub async fn get_user_permissions(db: &DatabaseConnection, user_id: i64) -> Resu
             LEFT JOIN sys_role r ON ur.role_id = r.role_id
             WHERE m.status = '0' AND r.status = '0'
               AND m.perms IS NOT NULL AND m.perms != ''
-              AND ur.user_id = ?
+              AND ur.user_id = $1
         "#;
         info!(
             "[DB_QUERY] Executing query for user permissions with user_id: {}",
@@ -458,7 +530,9 @@ pub async fn select_post_ids_by_user_id(db: &DatabaseConnection, user_id: i64) -
         "[SERVICE] Entering select_post_ids_by_user_id for user_id: {}",
         user_id
     );
-    sqlx::query_scalar("SELECT post_id FROM sys_user_post WHERE user_id = ?")
+
+    let db = db.get_postgres_connection_pool();
+    sqlx::query_scalar("SELECT post_id FROM sys_user_post WHERE user_id = $1")
         .bind(user_id)
         .fetch_all(db)
         .await
@@ -470,9 +544,17 @@ pub async fn select_post_ids_by_user_id(db: &DatabaseConnection, user_id: i64) -
 pub async fn get_auth_role(db: &DatabaseConnection, user_id: i64) -> Result<AuthRoleVo, AppError> {
     info!("[SERVICE] Entering get_auth_role for user_id: {}", user_id);
     let user = select_user_by_id(db, user_id).await?;
-    let all_roles: Vec<SysRole> = sqlx::query_as("SELECT * FROM sys_role WHERE status = '0' AND del_flag = '0'")
-        .fetch_all(db)
+
+    let all_roles = SysRole::find()
+        .filter(SysRoleColumn::Status.eq("0"))
+        .filter(SysRoleColumn::DelFlag.eq("0"))
+        .all(db)
         .await?;
+
+    // let db = db.get_postgres_connection_pool();
+    // let all_roles: Vec<SysRoleModel> = sqlx::query_as("SELECT * FROM sys_role WHERE status = '0' AND del_flag = '0'")
+    //     .fetch_all(db)
+    //     .await?;
 
     Ok(AuthRoleVo {
         user,
@@ -487,14 +569,18 @@ pub async fn update_auth_role(db: &DatabaseConnection, vo: UpdateAuthRoleVo) -> 
         "[SERVICE] Entering update_auth_role for user_id: {}",
         vo.user_id
     );
-    let mut tx = db.begin().await?;
+    let tx = db.begin().await?;
 
     // 1. 删除该用户所有的旧角色关联
-    sqlx::query("DELETE FROM sys_user_role WHERE user_id = ?")
-        .bind(vo.user_id)
-        .execute(&mut *tx)
+    SysUserRole::delete_many()
+        .filter(SysUserRoleColumn::UserId.eq(vo.user_id))
+        .exec(&tx)
         .await?;
-    info!("[TX] Deleted old roles for user_id: {}", vo.user_id);
+    // sqlx::query("DELETE FROM sys_user_role WHERE user_id = ?")
+    //     .bind(vo.user_id)
+    //     .execute(&tx)
+    //     .await?;
+    // info!("[TX] Deleted old roles for user_id: {}", vo.user_id);
 
     // 2. 解析前端传来的 role_ids 字符串
     let role_ids: Vec<i64> = vo
@@ -506,7 +592,7 @@ pub async fn update_auth_role(db: &DatabaseConnection, vo: UpdateAuthRoleVo) -> 
     // 3. 如果有新的角色ID，则批量插入
     if !role_ids.is_empty() {
         // 复用已有的插入辅助函数
-        insert_user_role(&mut tx, vo.user_id, &role_ids).await?;
+        insert_user_role(&tx, vo.user_id, &role_ids).await?;
     }
 
     tx.commit().await?;
@@ -523,9 +609,9 @@ pub async fn get_user_profile(db: &DatabaseConnection, user_id: i64) -> Result<U
         "[SERVICE] Entering get_user_profile for user_id: {}",
         user_id
     );
-
     let user = select_user_by_id(db, user_id).await?;
 
+    let db = db.get_postgres_connection_pool();
     let roles: Vec<String> = sqlx::query_scalar(
         "SELECT r.role_name FROM sys_role r
          LEFT JOIN sys_user_role ur ON r.role_id = ur.role_id
@@ -566,17 +652,27 @@ pub async fn update_user_profile(db: &DatabaseConnection, user_id: i64, vo: Upda
         "[SERVICE] Entering update_user_profile for user_id: {}",
         user_id
     );
-    let result = sqlx::query!(
-        "UPDATE sys_user SET nick_name = ?, phonenumber = ?, email = ?, sex = ?, update_time = NOW() WHERE user_id = ?",
-        vo.nick_name,
-        vo.phonenumber,
-        vo.email,
-        vo.sex,
-        user_id
-    )
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected())
+
+    let result = SysUser::update_many()
+        .filter(SysUserColumn::UserId.eq(user_id))
+        .col_expr(SysUserColumn::NickName, vo.nick_name.into())
+        .col_expr(SysUserColumn::Phonenumber, vo.phonenumber.into())
+        .col_expr(SysUserColumn::Email, vo.email.into())
+        .col_expr(SysUserColumn::Sex, vo.sex.into())
+        .col_expr(SysUserColumn::UpdateTime, Local::now().naive_local().into())
+        .exec(db)
+        .await?;
+    // let result = sqlx::query!(
+    //     "UPDATE sys_user SET nick_name = $1, phonenumber = $2, email = $3, sex = $4, update_time = NOW() WHERE user_id = $5",
+    //     vo.nick_name,
+    //     vo.phonenumber,
+    //     vo.email,
+    //     vo.sex,
+    //     user_id
+    // )
+    // .execute(db)
+    // .await?;
+    Ok(result.rows_affected)
 }
 
 /// 用户修改个人密码
@@ -609,19 +705,29 @@ pub async fn update_user_pwd(db: &DatabaseConnection, user_id: i64, vo: UpdatePw
         .hash_password(vo.new_password.as_bytes(), &salt)
         .map_err(|e| AppError::PasswordHashError(e.to_string()))?
         .to_string();
-    let result = sqlx::query!(
-        "UPDATE sys_user SET password = ?, pwd_update_date = NOW() WHERE user_id = ?",
-        new_password_hash,
-        user_id
-    )
-    .execute(db)
-    .await?;
+
+    let result = SysUser::update_many()
+        .filter(SysUserColumn::UserId.eq(user_id))
+        .col_expr(SysUserColumn::Password, new_password_hash.into())
+        .col_expr(
+            SysUserColumn::PwdUpdateDate,
+            Local::now().naive_local().into(),
+        )
+        .exec(db)
+        .await?;
+    // let result = sqlx::query!(
+    //     "UPDATE sys_user SET password = ?, pwd_update_date = NOW() WHERE user_id = ?",
+    //     new_password_hash,
+    //     user_id
+    // )
+    // .execute(db)
+    // .await?;
 
     info!(
         "[SERVICE] Successfully updated password for user_id: {}",
         user_id
     );
-    Ok(result.rows_affected())
+    Ok(result.rows_affected)
 }
 
 /// 更新当前登录用户的头像
@@ -648,11 +754,16 @@ pub async fn update_user_avatar(db: &DatabaseConnection, user_id: i64, file_data
 
     let avatar_url = format!("/uploads/avatar/{}", file_name);
 
-    sqlx::query("UPDATE sys_user SET avatar = ? WHERE user_id = ?")
-        .bind(&avatar_url)
-        .bind(user_id)
-        .execute(db)
+    SysUser::update_many()
+        .filter(SysUserColumn::UserId.eq(user_id))
+        .col_expr(SysUserColumn::Avatar, avatar_url.clone().into())
+        .exec(db)
         .await?;
+    // sqlx::query("UPDATE sys_user SET avatar = ? WHERE user_id = ?")
+    //     .bind(&avatar_url)
+    //     .bind(user_id)
+    //     .execute(db.get_postgres_connection_pool())
+    //     .await?;
 
     info!(
         "[SERVICE] User avatar updated for user_id: {}. New URL: {}",
@@ -667,7 +778,7 @@ pub async fn export_user_list(db: &DatabaseConnection, params: ListUserQuery) ->
         "[SERVICE] Starting user list export with params: {:?}",
         params
     );
-
+    let db = db.get_postgres_connection_pool();
     let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT u.user_id, u.user_name, u.nick_name, u.email, u.phonenumber, u.sex, u.status, u.login_ip, u.login_date, u.create_time, d.dept_name
          FROM sys_user u

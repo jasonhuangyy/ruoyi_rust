@@ -1,5 +1,5 @@
-use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
+// use chrono::NaiveDateTime;
+use serde::Deserialize;
 
 /// 数据库实体 (与 `sys_config` 表完全对应)
 /// 使用 `sqlx::FromRow` 以便从数据库查询结果自动映射。

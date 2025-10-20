@@ -355,7 +355,7 @@ pub async fn select_role_ids_by_keys(db: &DatabaseConnection, role_keys: &[Strin
     }
 
     let role_ids: Vec<i64> = SysRole::find()
-        .filter(SysRoleColumn::RoleKey.is_in(role_keys.clone()))
+        .filter(SysRoleColumn::RoleKey.is_in(role_keys))
         .all(db)
         .await?
         .into_iter()

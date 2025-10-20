@@ -176,8 +176,8 @@ pub async fn update_menu(db: &DatabaseConnection, menu: UpdateMenuVo) -> Result<
     exist.order_num = Set(menu.order_num);
     exist.path = Set(menu.path);
     exist.component = Set(menu.component);
-    exist.is_frame = Set(menu.is_frame == 1);
-    exist.is_cache = Set(menu.is_cache == 1);
+    exist.is_frame = Set(menu.is_frame);
+    exist.is_cache = Set(menu.is_cache);
     exist.menu_type = Set(Some(menu.menu_type));
     exist.visible = Set(menu.visible);
     exist.status = Set(Some(menu.status));
@@ -185,7 +185,7 @@ pub async fn update_menu(db: &DatabaseConnection, menu: UpdateMenuVo) -> Result<
     exist.icon = Set(menu.icon);
     exist.remark = Set(menu.remark);
 
-    let result = exist.update(db).await?;
+    exist.update(db).await?;
 
     // let is_frame_num: i32 = menu.is_frame;
     // let is_cache_num: i32 = menu.is_cache;

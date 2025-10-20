@@ -1,5 +1,5 @@
-use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
+// use chrono::NaiveDateTime;
+use serde::Deserialize;
 
 // /// 登录日志记录实体，与 `sys_logininfor` 数据库表完全对应。
 // #[derive(sqlx::FromRow, Debug, Serialize, Deserialize)]

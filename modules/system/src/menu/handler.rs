@@ -28,6 +28,7 @@ pub async fn get_routers(
 
     // 将 MenuTreeVo 转换为前端需要的 RouterVo 结构
     let router_vos = build_routers(menu_tree);
+    info!("获取到的菜单树: {:?}", router_vos);
 
     Ok(Json(AjaxResult::success(router_vos)))
 }
@@ -96,8 +97,8 @@ fn build_routers(menu_trees: Vec<MenuTreeVo>) -> Vec<RouterVo> {
                 meta: MetaVo {
                     title: menu.menu_name.clone(),
                     icon: menu.icon.clone().unwrap_or_default(),
-                    no_cache: menu.is_cache,
-                    link: if menu.is_frame {
+                    no_cache: menu.is_cache == 1,
+                    link: if menu.is_frame == 0 {
                         menu.path.clone()
                     } else {
                         None
@@ -180,7 +181,7 @@ fn get_route_name(menu: &SysMenuModel) -> String {
 fn get_route_path(menu: &SysMenuModel) -> String {
     let mut path = menu.path.clone().unwrap_or_default();
     // 如果是外链
-    if menu.is_frame == false {
+    if menu.is_frame == 0 {
         return path;
     }
     // 如果是顶级目录

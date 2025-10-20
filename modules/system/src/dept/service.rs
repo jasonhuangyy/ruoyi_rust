@@ -1,5 +1,3 @@
-use std::result;
-
 use super::model::{AddDeptVo, DeptTreeSelectVo, DeptTreeVo, UpdateDeptVo};
 use chrono::Local;
 use common::error::AppError;
@@ -12,8 +10,7 @@ use sea_orm::{
     ActiveValue::{NotSet, Set},
     ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, TransactionTrait,
 };
-use serde::de;
-use sqlx::{Postgres, QueryBuilder, Transaction};
+use sqlx::{Postgres, QueryBuilder};
 use tracing::{info, warn};
 
 pub async fn select_dept_list(db: &DatabaseConnection, dept_name: Option<&str>, status: Option<&str>) -> Result<Vec<SysDeptModel>, AppError> {
@@ -119,7 +116,7 @@ pub async fn update_dept(db: &DatabaseConnection, dept_vo: UpdateDeptVo) -> Resu
     );
 
     // 开启一个数据库事务
-    let mut tx = db.begin().await?;
+    let tx = db.begin().await?;
     info!(
         "[TX] Transaction started for updating dept_id: {}",
         dept_vo.dept_id
